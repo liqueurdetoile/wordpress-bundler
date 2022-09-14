@@ -1,0 +1,31 @@
+{
+    "name": "lqdt/wordpress-toolkit",
+    "description": "Wordpress toolkit to ease handling of managing path for wordpress plugins and themes by bringing up common tools",
+    "type": "library",
+    "license": "GPL2.0",
+    "autoload": {
+        "psr-4": {
+            "Lqdt\\WordpressToolkit\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Liqueur de Toile",
+            "email": "contact@liqueurdetoile.com"
+        }
+    ],
+    "minimum-stability": "stable",
+    "require": {
+        "php": ">=7.2",
+        "ilab/namespacer": "^0.2.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.5",
+        "slevomat/coding-standard": "^8.4"
+    },
+    "config": {
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true
+        }
+    }
+}
