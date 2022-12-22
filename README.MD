@@ -1,5 +1,7 @@
 # WordpressBundler
 
+**Warning : this project is still a work in progress**
+
 WordpressBundler is a wordpress project bundler written in PHP that produces clean production output. With WordpressBundler, you can easily keep all your PHP and JS code in a single monorepository, do your dev as you want and, finally, creates a clean bundle that only embeds needed production things.
 
 ## Why WordpressBundler ?
