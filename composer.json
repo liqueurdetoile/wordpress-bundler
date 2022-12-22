@@ -35,6 +35,7 @@
         "vimeo/psalm": "^4.27",
         "symfony/var-dumper": "^5.4"
     },
+    "bin": ["bin/wpbundler", "bin/wpbundler.bat"],
     "config": {
         "allow-plugins": {
             "dealerdirect/phpcodesniffer-composer-installer": true,

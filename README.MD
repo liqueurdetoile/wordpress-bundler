@@ -84,5 +84,5 @@ Option  | Value type  | Description
 ## Running bundler
 
 ```bash
-vendor/bin/WordpressBundler bundle
+vendor/bin/wpbundler bundle
 ```
