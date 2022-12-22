@@ -1,0 +1,12 @@
+{
+  "name": "lqdt/fake",
+  "description": "Wordpress bundler fully automates production release for wordpress plugins and themes and brings convenient tools to configure them",
+  "type": "wordpress-plugin",
+  "license": "GPL-3.0-or-later",
+  "authors": [
+      {
+          "name": "Liqueur de Toile",
+          "email": "contact@liqueurdetoile.com"
+      }
+  ]
+}

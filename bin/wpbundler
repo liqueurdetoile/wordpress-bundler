@@ -1,0 +1,21 @@
+#!/usr/bin/env php
+<?php
+/**
+ * Wordpress Bundler - PHP package to prepare production bundles for Wordpress plugins and templates
+ *
+ * @author Liqueur de Toile <contact@liqueurdetoile.com>
+ * @copyright 2022-present Liqueur de Toile
+ * @license GPL-3.0-or-later (https://www.gnu.org/licenses/gpl-3.0.html)
+ */
+declare(strict_types=1);
+
+require dirname(__DIR__) . DIRECTORY_SEPARATOR . 'vendor'  . DIRECTORY_SEPARATOR .  'autoload.php';
+
+use Lqdt\WordpressBundler\Command\BundleCommand;
+use Symfony\Component\Console\Application;
+
+$application = new Application();
+
+$application->add(new BundleCommand());
+
+$application->run();

@@ -31,6 +31,7 @@
     <rule ref="Squiz.Commenting.FunctionComment">
       <exclude-pattern>*/tests/*</exclude-pattern>
       <exclude name="Squiz.Commenting.FunctionComment.ParamCommentFullStop"/>
+      <exclude name="Squiz.Commenting.FunctionComment.ThrowsNoFullStop"/>
     </rule>
     <rule ref="Squiz.Commenting.VariableComment" />
     <rule ref="Squiz.Arrays.ArrayBracketSpacing"/>
@@ -133,7 +134,7 @@
     <exclude-pattern>*/templates/*</exclude-pattern>
     <exclude-pattern>*/tests/Fixture/*</exclude-pattern>
     </rule>
-    <rule ref="SlevomatCodingStandard.TypeHints.LongTypeHints"/>
+    <!-- <rule ref="SlevomatCodingStandard.TypeHints.LongTypeHints"/> -->
     <rule ref="SlevomatCodingStandard.TypeHints.ReturnTypeHintSpacing"/>
     <rule ref="SlevomatCodingStandard.TypeHints.NullableTypeForNullDefaultValue"/>
     <rule ref="SlevomatCodingStandard.TypeHints.ParameterTypeHintSpacing"/>
