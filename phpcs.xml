@@ -1,5 +1,7 @@
 <?xml version="1.0"?>
 <ruleset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" name="Lqdt_WordpressToolKit">
+    <exclude-pattern>*/vendor/*</exclude-pattern>
+
     <!-- PSR12 Standard -->
     <rule ref="PSR12">
       <exclude name="PSR12.Files.FileHeader.SpacingAfterBlock"/>
