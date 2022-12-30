@@ -1,12 +1,12 @@
 {
-    "name": "lqdt/wordpress-bundler",
+    "name": "lqdt\/wordpress-bundler",
     "description": "Wordpress bundler fully automates production release for wordpress plugins and themes and brings convenient tools to configure them",
     "type": "library",
     "license": "GPL-3.0-or-later",
     "autoload": {
         "psr-4": {
-            "Lqdt\\WordpressBundler\\": "src/",
-            "Lqdt\\WordpressBundler\\Test\\": "tests/"
+            "Lqdt\\WordpressBundler\\": "src\/",
+            "Lqdt\\WordpressBundler\\Test\\": "tests\/"
         }
     },
     "authors": [
@@ -18,28 +18,32 @@
     "minimum-stability": "stable",
     "require": {
         "php": ">=7.2",
-        "symfony/console": "^5.4",
-        "symfony/filesystem": "^5.4",
-        "adbario/php-dot-notation": "^3.1",
-        "mindplay/composer-locator": "^2.1",
-        "laminas/laminas-log": "^2.15",
-        "nelexa/zip": "^4.0",
-        "humbug/php-scoper": "^0.17.5"
+        "symfony\/console": "^5.4",
+        "symfony\/filesystem": "^5.4",
+        "adbario\/php-dot-notation": "^3.1",
+        "mindplay\/composer-locator": "^2.1",
+        "laminas\/laminas-log": "^2.15",
+        "nelexa\/zip": "^4.0",
+        "humbug\/php-scoper": "^0.17.5",
+        "togos\/gitignore": "^1.1"
     },
     "require-dev": {
-        "phpunit/phpunit": "^9.5",
-        "slevomat/coding-standard": "^8.4",
-        "squizlabs/php_codesniffer": "^3.7",
-        "phpstan/phpstan": "^1.8",
-        "phpstan/phpstan-phpunit": "^1.1",
-        "vimeo/psalm": "^4.27",
-        "symfony/var-dumper": "^5.4"
+        "phpunit\/phpunit": "^9.5",
+        "slevomat\/coding-standard": "^8.4",
+        "squizlabs\/php_codesniffer": "^3.7",
+        "phpstan\/phpstan": "^1.8",
+        "phpstan\/phpstan-phpunit": "^1.1",
+        "vimeo\/psalm": "^4.27",
+        "symfony\/var-dumper": "^5.4"
     },
-    "bin": ["bin/wpbundler", "bin/wpbundler.bat"],
+    "bin": [
+        "bin\/wpbundler",
+        "bin\/wpbundler.bat"
+    ],
     "config": {
         "allow-plugins": {
-            "dealerdirect/phpcodesniffer-composer-installer": true,
-            "mindplay/composer-locator": true
+            "dealerdirect\/phpcodesniffer-composer-installer": true,
+            "mindplay\/composer-locator": true
         }
     }
 }

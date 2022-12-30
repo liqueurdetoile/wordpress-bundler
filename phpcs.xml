@@ -18,10 +18,10 @@
     <rule ref="Generic.CodeAnalysis.UnconditionalIfStatement"/>
     <rule ref="Generic.CodeAnalysis.UnnecessaryFinalModifier"/>
     <rule ref="Generic.Files.LineLength">
-    <properties>
-        <property name="ignoreComments" type="boolean" value="true"/>
-    </properties>
-    <exclude-pattern>*/tests/*</exclude-pattern>
+        <properties>
+            <property name="ignoreComments" type="boolean" value="true"/>
+        </properties>
+        <exclude-pattern>*/tests/*</exclude-pattern>
     </rule>
     <rule ref="Generic.Formatting.NoSpaceAfterCast"/>
     <rule ref="Generic.PHP.DeprecatedFunctions"/>
@@ -30,11 +30,6 @@
 
 
     <!-- phpcs Squiz sniffs -->
-    <rule ref="Squiz.Commenting.FunctionComment">
-      <exclude-pattern>*/tests/*</exclude-pattern>
-      <exclude name="Squiz.Commenting.FunctionComment.ParamCommentFullStop"/>
-      <exclude name="Squiz.Commenting.FunctionComment.ThrowsNoFullStop"/>
-    </rule>
     <rule ref="Squiz.Commenting.VariableComment" />
     <rule ref="Squiz.Arrays.ArrayBracketSpacing"/>
     <rule ref="Squiz.Classes.ClassFileName"/>
@@ -128,7 +123,6 @@
         <property name="linesCountBeforeDeclare" value="0"/>
         <property name="linesCountAfterDeclare" value="1"/>
         <property name="spacesCountAroundEqualsSign" value="0"/>
-        <!-- Property names used in slevomat/coding-standard v6 -->
         <property name="newlinesCountAfterDeclare" value="2"/>
         <property name="newlinesCountBetweenOpenTagAndDeclare" value="1"/>
     </properties>
@@ -136,7 +130,6 @@
     <exclude-pattern>*/templates/*</exclude-pattern>
     <exclude-pattern>*/tests/Fixture/*</exclude-pattern>
     </rule>
-    <!-- <rule ref="SlevomatCodingStandard.TypeHints.LongTypeHints"/> -->
     <rule ref="SlevomatCodingStandard.TypeHints.ReturnTypeHintSpacing"/>
     <rule ref="SlevomatCodingStandard.TypeHints.NullableTypeForNullDefaultValue"/>
     <rule ref="SlevomatCodingStandard.TypeHints.ParameterTypeHintSpacing"/>
@@ -144,11 +137,11 @@
 
     <!-- phpcs Zend sniffs -->
     <rule ref="Zend.NamingConventions.ValidVariableName">
-    <exclude name="Zend.NamingConventions.ValidVariableName.PrivateNoUnderscore"/>
-    <exclude name="Zend.NamingConventions.ValidVariableName.ContainsNumbers"/>
-    <exclude name="Zend.NamingConventions.ValidVariableName.StringVarContainsNumbers"/>
-    <exclude name="Zend.NamingConventions.ValidVariableName.MemberVarContainsNumbers"/>
-    <exclude name="Zend.NamingConventions.ValidVariableName.NotCamelCaps"/>
-    <exclude name="Zend.NamingConventions.ValidVariableName.MemberVarNotCamelCaps"/>
+        <exclude name="Zend.NamingConventions.ValidVariableName.PrivateNoUnderscore"/>
+        <exclude name="Zend.NamingConventions.ValidVariableName.ContainsNumbers"/>
+        <exclude name="Zend.NamingConventions.ValidVariableName.StringVarContainsNumbers"/>
+        <exclude name="Zend.NamingConventions.ValidVariableName.MemberVarContainsNumbers"/>
+        <exclude name="Zend.NamingConventions.ValidVariableName.NotCamelCaps"/>
+        <exclude name="Zend.NamingConventions.ValidVariableName.MemberVarNotCamelCaps"/>
     </rule>
 </ruleset>

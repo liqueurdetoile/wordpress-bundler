@@ -1,4 +1,4 @@
 .phpunit.result.cache
-/vendor
+vendor
 dist
 build
