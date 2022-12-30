@@ -8,10 +8,10 @@ use PHPUnit\Framework\TestCase;
 
 class ResolverTest extends TestCase
 {
-    public function testGetBasePath(): void
+    public function testGetRootPath(): void
     {
-        $this->assertEquals(Resolver::normalize(dirname(dirname(__DIR__))), Resolver::getBasePath());
-        $this->assertEquals(Resolver::normalize(__DIR__), Resolver::getBasePath(__DIR__));
+        $this->assertEquals(Resolver::normalize(dirname(dirname(__DIR__))), Resolver::getRootPath());
+        $this->assertEquals(Resolver::normalize(__DIR__), Resolver::getRootPath(__DIR__));
     }
 
     public function resolveData(): array
@@ -22,14 +22,6 @@ class ResolverTest extends TestCase
                 Resolver::makeRelative(__FILE__) => Resolver::normalize(__FILE__),
               ],
             ],
-            [__DIR__, [
-                Resolver::makeRelative(__DIR__) => Resolver::normalize(__DIR__),
-              ],
-            ],
-            ['src', [
-                'src' => Resolver::makeAbsolute('src'),
-              ],
-            ],
             ['tests/fixtures/resolver/*.*', [
                 'tests/fixtures/resolver/main.js' => Resolver::makeAbsolute('tests/fixtures/resolver/main.js'),
                 'tests/fixtures/resolver/main.php' => Resolver::makeAbsolute('tests/fixtures/resolver/main.php'),
@@ -38,7 +30,6 @@ class ResolverTest extends TestCase
             ['tests/fixtures/resolver/*', [
                 'tests/fixtures/resolver/main.js' => Resolver::makeAbsolute('tests/fixtures/resolver/main.js'),
                 'tests/fixtures/resolver/main.php' => Resolver::makeAbsolute('tests/fixtures/resolver/main.php'),
-                'tests/fixtures/resolver/sub' => Resolver::makeAbsolute('tests/fixtures/resolver/sub'),
               ],
             ],
         ];

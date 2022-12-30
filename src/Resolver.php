@@ -20,18 +20,19 @@ class Resolver
      *
      * @var string|null
      */
-    protected static $_basepath;
+    protected static $_rootpath;
 
     /**
-     * Get resolver base path and caches project root
+     * Get resolver root path. If no override is provided, it will be fetched from
+     * project root. Overriden path should be an absolute path.
      *
      * @param  string|null $basepath Overrides base path if provided
      * @return string
      */
-    public static function getBasePath(?string $basepath = null): string
+    public static function getRootPath(?string $basepath = null): string
     {
         if ($basepath === null) {
-            return self::$_basepath ?? (self::$_basepath = self::normalize(ComposerLocator::getRootPath()));
+            return self::$_rootpath ?? (self::$_rootpath = self::normalize(ComposerLocator::getRootPath()));
         }
 
         return self::normalize($basepath);
@@ -39,7 +40,7 @@ class Resolver
 
     /**
      * Makes a path absolute
-     * If no base path provided, project basepath will be used
+     * If no base path provided, project root path will be used
      *
      * @param  string      $path     Path
      * @param  string|null $basepath Base path to use
@@ -47,7 +48,7 @@ class Resolver
      */
     public static function makeAbsolute(string $path, ?string $basepath = null): string
     {
-        return Path::makeAbsolute($path, self::getBasePath($basepath));
+        return Path::makeAbsolute($path, self::getRootPath($basepath));
     }
 
     /**
@@ -60,7 +61,7 @@ class Resolver
      */
     public static function makeRelative(string $path, ?string $basepath = null): string
     {
-        return Path::makeRelative($path, self::getBasePath($basepath));
+        return Path::makeRelative($path, self::getRootPath($basepath));
     }
 
     /**
@@ -88,32 +89,42 @@ class Resolver
      *
      * The key of items are the relative path to basepath and the value is the absolute path
      *
-     * @param  string      $path     Path to resolve
-     * @param  string|null $basepath Base path to resolve from
+     * Each folder will be explored recursively to get each file
+     *
+     * @param  string      $path         Path to resolve
+     * @param  string|null $basepath     Base path to resolve from
+     * @param  string|null $originalpath Original path to resolve from to build valid relative file list
      * @return array<string, string> Resolved path(s) or false in case of error
      */
-    public static function resolve(string $path, ?string $basepath = null): array
+    public static function resolve(string $path, ?string $basepath = null, ?string $originalpath = null): array
     {
-        $basepath = self::getBasePath($basepath);
+        $basepath = self::getRootPath($basepath);
 
         if (!is_dir($basepath)) {
             throw new \RuntimeException('[WordpressBundler] Resolver is unable to locate base folder');
         }
 
+        if ($originalpath === null) {
+            $originalpath = $basepath;
+        }
+
         $path = self::makeAbsolute($path, $basepath);
+        $paths = [];
         $ret =  [];
 
-        if (is_file($path) || is_dir($path)) {
-            $paths = [$path];
+        if (is_file($path)) {
+            $paths[self::makeRelative($path, $originalpath)] = $path;
+        } elseif (is_dir($path)) {
+            $paths += self::resolve('*', $path, $originalpath);
         } else {
-            $paths = glob($path) ?: [];
+            $gpaths = glob($path) ?: [];
+            // Resolve each returned path in order to explore subdirectories
+            foreach ($gpaths as $p) {
+                $paths += self::resolve($p, $basepath, $originalpath);
+            }
         }
 
-        foreach ($paths as $path) {
-            $ret[self::makeRelative($path, $basepath)] = $path;
-        }
-
-        return $ret;
+        return $paths;
     }
 
     /**
