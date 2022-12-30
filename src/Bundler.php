@@ -279,8 +279,11 @@ class Bundler
     {
         try {
             $include = $this->_config->getArray('include');
+            // Add .wpinclude paths
+            $include = $this->parseWpInclude($include);
         } catch (\TypeError $err) {
-            $include = ['*'];
+            $include = $this->parseWpInclude($include);
+            $include = $include ?: ['*'];
         }
 
         try {
@@ -291,7 +294,6 @@ class Bundler
 
         $exclude = $this->parseGitIgnore($exclude);
         $exclude = $this->parseWpIgnore($exclude);
-        $include = $this->parseWpInclude($include);
 
         $excluded = Resolver::resolveMany($exclude, $this->getBasePath());
         $included = Resolver::resolveMany($include, $this->getBasePath());

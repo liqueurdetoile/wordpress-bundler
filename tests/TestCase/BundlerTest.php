@@ -97,6 +97,22 @@ class BundlerTest extends TestCase
         unlink($path);
     }
 
+    public function testParseWpInclude(): void
+    {
+        $path = Resolver::makeAbsolute('.wpinclude');
+        file_put_contents($path, 'README.MD');
+
+        $bundler = new Bundler();
+        $included = $bundler->parseWpInclude();
+        $this->assertNotEmpty($included);
+
+        $bundler = new Bundler(['wpinclude' => false]);
+        $included = $bundler->parseWpInclude();
+        $this->assertEmpty($included);
+
+        unlink($path);
+    }
+
     public function getEntriesData(): array
     {
         return [
