@@ -49,7 +49,7 @@ class BundleCommand extends Command
      *
      * @param \Symfony\Component\Console\Input\InputInterface   $input  Input interface
      * @param \Symfony\Component\Console\Output\OutputInterface $output Output interface
-     * @return integer
+     * @return int
      */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {

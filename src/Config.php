@@ -101,9 +101,9 @@ class Config
      * @throws \RuntimeException If no file can be found at normalized target path
      * @return string
      */
-    public static function validateFilePath(?string $path = null, bool $throw = true): string
+    public static function getConfigFilePath(?string $path = null, bool $throw = true): string
     {
-        $basepath = Resolver::getBasePath($path);
+        $basepath = Resolver::getRootPath($path);
 
         if (is_dir($basepath)) {
             $basepath = Resolver::normalize($basepath . '/composer.json');
@@ -126,10 +126,11 @@ class Config
      * @param  string|null $key   Optional key in configuration to read from
      * @param  boolean     $throw If `true`, any error in accessing file content will raise an exception. Otherwise an empty Dot object is returned
      * @return \Adbar\Dot
+     * @throws \RuntimeException Whenever reading of the file is not succesful
      */
     public static function read(?string $path = null, ?string $key = null, bool $throw = true): Dot
     {
-        $path = self::validateFilePath($path);
+        $path = self::getConfigFilePath($path);
         $content = file_get_contents($path);
 
         if ($content === false) {
@@ -138,7 +139,7 @@ class Config
             }
 
             throw new RuntimeException(
-                sprintf('[WordpressBundler] Unable to read configuration file at path %s', $path)
+                sprintf('[WordpressBundler] Unable to read configuration file "%s"', $path)
             );
         }
 
@@ -150,7 +151,7 @@ class Config
             }
 
             throw new RuntimeException(
-                sprintf('[WordpressBundler] Unable to parse as JSON configuration file at path %s', $path)
+                sprintf('[WordpressBundler] Unable to parse content as JSON in "%s"', $path)
             );
         }
 
@@ -160,7 +161,9 @@ class Config
                     return new Dot();
                 }
 
-                throw new RuntimeException('[WordpressBundler] Unable to locate requested key in configuration file');
+                throw new RuntimeException(
+                    sprintf('[WordpressBundler] Unable to locate requested key "%s" in "%s"', $key, $path)
+                );
             }
 
             $content = new Dot($content->get($key));
@@ -183,7 +186,7 @@ class Config
      */
     public static function write($config, ?string $path = null, ?string $key = null, bool $merge = false): string
     {
-        $path = self::validateFilePath($path);
+        $path = self::getConfigFilePath($path);
         $source = self::read($path, $key, false);
         $config = new Dot($config);
         $source = $merge ?
@@ -296,7 +299,7 @@ class Config
      */
     public function load(?string $path = null, ?string $key = null, string $registry = 'defaults'): self
     {
-        $path = self::validateFilePath($path);
+        $path = self::getConfigFilePath($path);
         $method = 'set' . ucFirst($registry);
         if (!method_exists($this, $method)) {
             throw new InvalidArgumentException(
@@ -395,6 +398,17 @@ class Config
     }
 
     /**
+     * Fetch a value by key and check that it is an array
+     *
+     * @param  string $key Key
+     * @return array
+     */
+    public function getArray(string $key): array
+    {
+        return $this->getWithType($key, 'array', 'is_array');
+    }
+
+    /**
      * Fetch a value by key and check that it is a boolean
      *
      * @param  string $key Key
@@ -453,7 +467,7 @@ class Config
     /**
      * Removes one or many keys in one or all registries
      *
-     * @param string|integer|array $key      Key to remove
+     * @param string|int|array $key      Key to remove
      * @param string               $registry Targetted registry or all registries with `config` value.  Can be any between fallbacks, overrides, defaults and config
      * @return self
      */

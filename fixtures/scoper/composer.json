@@ -22,7 +22,7 @@
       "exclude": [
         "scoper.inc.php"
       ],
-      "php-scoper": true,
+      "phpscoper": true,
       "zip": false
     }
   }
