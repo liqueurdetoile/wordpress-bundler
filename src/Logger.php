@@ -19,7 +19,7 @@ class Logger
     public static function get(int $priority = 4): BaseLogger
     {
         $writer = new Stream('php://output');
-        $formatter = new Simple('%priorityName% - %message%');
+        $formatter = new Simple('%message%');
         $filter = new Priority($priority);
         $writer->setFormatter($formatter);
         $writer->addFilter($filter);

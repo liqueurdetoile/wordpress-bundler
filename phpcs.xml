@@ -30,7 +30,6 @@
 
 
     <!-- phpcs Squiz sniffs -->
-    <rule ref="Squiz.Commenting.VariableComment" />
     <rule ref="Squiz.Arrays.ArrayBracketSpacing"/>
     <rule ref="Squiz.Classes.ClassFileName"/>
     <rule ref="Squiz.Classes.ClassFileName.NoMatch">

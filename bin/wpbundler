@@ -9,13 +9,16 @@
  */
 declare(strict_types=1);
 
-require dirname(__DIR__) . DIRECTORY_SEPARATOR . 'vendor'  . DIRECTORY_SEPARATOR .  'autoload.php';
-
 use Lqdt\WordpressBundler\Command\BundleCommand;
 use Symfony\Component\Console\Application;
 
+// include autoloader
+if (is_file('vendor/autoload.php')) {
+    include_once 'vendor/autoload.php';
+} else {
+    include_once dirname(__DIR__) . '/vendor/autoload.php';
+}
+
 $application = new Application();
-
 $application->add(new BundleCommand());
-
 $application->run();

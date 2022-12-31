@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Lqdt\WordpressBundler;
 
 use PhpZip\Constants\ZipCompressionLevel;
+use PhpZip\Exception\ZipException;
 use PhpZip\ZipFile;
 use Symfony\Component\Filesystem\Filesystem;
 
@@ -23,6 +24,7 @@ class Bundler
      * @var array
      */
     protected $_defaults = [
+      'log' => false,
       'loglevel' => 5,
       'debug' => false,
       'clean' => true,
@@ -72,6 +74,20 @@ class Bundler
     protected $_logger;
 
     /**
+     * Stores bundling result code
+     *
+     * - 0 : No error
+     * - 1 : Error during export (missing files)
+     * - 2 : Error during composer install
+     * - 3 : Error during dependencies scoping
+     * - 4 : Error during zipping
+     * - 5 : Unable to load a configuration file
+     *
+     * @var int
+     */
+    protected $_result = 0;
+
+    /**
      * Caches bundler root path
      *
      * @var string
@@ -99,6 +115,8 @@ class Bundler
 
         $this->_logger = Logger::get($this->_config->get('loglevel'));
         $this->_fs = new FileSystem();
+        $this->_log(-1, 'WordpressBundler - Bundling starting');
+        $this->_log(-1, '------------------------------------');
         $this->_loadConfig();
     }
 
@@ -189,6 +207,16 @@ class Bundler
     }
 
     /**
+     * Returns the bundle result
+     *
+     * @return int
+     */
+    public function getResult(): int
+    {
+        return $this->_result;
+    }
+
+    /**
      * Returns the absolute path to composer.json file
      *
      * @return string
@@ -209,16 +237,17 @@ class Bundler
     public function parseGitIgnore(array $exclude = []): array
     {
         if (!$this->_config->getBoolean('gitignore')) {
-            $this->_log(7, 'Skipping .gitignore to exclude files');
+            $this->_log(6, 'Skipping .gitignore to exclude files');
 
             return $exclude;
         }
 
-        $this->_log(7, 'Parsing .gitignore and adding matching files to exclude list');
+        $this->_log(6, 'Parsing .gitignore and adding matching files to exclude list');
 
-        $gitignore = Resolver::normalize(Resolver::getRootPath() . '/.gitignore');
-
-        return $exclude + $this->_getMatchesFromGitFile($gitignore);
+        $gitignore = $this->getRootPath('.gitignore');
+        $excluded = $this->_getMatchesFromGitFile($gitignore);
+        $this->_log(5, sprintf('%s matching files added to exclude list', count($excluded)));
+        return $exclude + $excluded;
     }
 
     /**
@@ -232,16 +261,18 @@ class Bundler
     public function parseWpIgnore(array $exclude = []): array
     {
         if (!$this->_config->getBoolean('wpignore')) {
-            $this->_log(7, 'Skipping .wpignore to exclude files');
+            $this->_log(6, 'Skipping .wpignore to exclude files');
 
             return $exclude;
         }
 
-        $this->_log(7, 'Parsing .wpignore and adding matching files to exclude list');
+        $this->_log(6, 'Parsing .wpignore and adding matching files to exclude list');
 
-        $wpignore = Resolver::normalize(Resolver::getRootPath() . '/.wpignore');
+        $wpignore = $this->getRootPath('.wpignore');
+        $excluded = $this->_getMatchesFromGitFile($wpignore);
+        $this->_log(5, sprintf('%s matching files added to exclude list', count($excluded)));
 
-        return $exclude + $this->_getMatchesFromGitFile($wpignore);
+        return $exclude + $excluded;
     }
 
     /**
@@ -255,16 +286,18 @@ class Bundler
     public function parseWpInclude(array $include = []): array
     {
         if (!$this->_config->getBoolean('wpinclude')) {
-            $this->_log(7, 'Skipping .wpinclude to include files');
+            $this->_log(6, 'Skipping .wpinclude to include files');
 
             return $include;
         }
 
-        $this->_log(7, 'Parsing .wpinclude and adding matching files to include list');
+        $this->_log(6, 'Parsing .wpinclude and adding matching files to include list');
 
-        $wpinclude = Resolver::normalize(Resolver::getRootPath() . '/.wpinclude');
+        $wpinclude = $this->getRootPath('.wpinclude');
+        $included = $this->_getMatchesFromGitFile($wpinclude);
+        $this->_log(5, sprintf('%s matching files added to include list', count($included)));
 
-        return $include + $this->_getMatchesFromGitFile($wpinclude);
+        return $include + $included;
     }
 
 
@@ -277,12 +310,14 @@ class Bundler
      */
     public function getEntries(): array
     {
+        $this->_log(6, sprintf('Paths resolving starting'));
+
         try {
             $include = $this->_config->getArray('include');
             // Add .wpinclude paths
             $include = $this->parseWpInclude($include);
         } catch (\TypeError $err) {
-            $include = $this->parseWpInclude($include);
+            $include = $this->parseWpInclude();
             $include = $include ?: ['*'];
         }
 
@@ -307,6 +342,8 @@ class Bundler
             $entries[$k] = $entry;
         }
 
+        $this->_log(5, sprintf('Paths resolving done : %d files found', count($entries)));
+
         return $entries;
     }
 
@@ -318,15 +355,28 @@ class Bundler
      */
     public function bundle(array $overrides = []): string
     {
-        $this->_config->setOverrides($overrides);
+        if (!empty($overrides)) {
+            $this->_config->setOverrides($overrides);
+            $this->_loadConfig();
+        }
+
         $scoped = (bool)$this->_config->get('phpscoper');
         $zipped = (bool)$this->_config->get('zip');
         $useTmpFolder = $scoped || $zipped;
 
         // Handles directories
-        $output = $this->_handleDirectory($this->_config->getString('output'), $this->_config->getBoolean('clean'));
-        $otmp = $this->_handleDirectory(Resolver::makeAbsolute('__wpbundler_tmp', sys_get_temp_dir()), true);
-        $oscoped = $this->_handleDirectory(Resolver::makeAbsolute('__wpbundler_scoped', sys_get_temp_dir()), true);
+        $output = $this->_handleDirectory(
+            $this->_config->getString('output'),
+            $this->_config->getBoolean('clean')
+        );
+        $otmp = $this->_handleDirectory(
+            Resolver::makeAbsolute(uniqid('__wpbundler_tmp_'), sys_get_temp_dir()),
+            true
+        );
+        $oscoped = $this->_handleDirectory(
+            Resolver::makeAbsolute(uniqid('__wpbundler_scoped_'), sys_get_temp_dir()),
+            true
+        );
 
         // Export files and structures
         $target = $this->export($useTmpFolder ? $otmp : $output);
@@ -360,23 +410,24 @@ class Bundler
             $this->_config->getBoolean('keep.dev-dependencies');
         $entries = $this->getEntries();
 
-        $this->_log(7, sprintf('Copy files to %s', $to));
+        $this->_log(6, sprintf('Copy files', $to));
 
         foreach ($entries as $rpath => $fpath) {
             $tpath = Resolver::makeAbsolute($rpath, $to);
 
             if (is_file($fpath)) {
                 $this->_fs->copy($fpath, $tpath);
-                $this->_log(7, sprintf(' - %s => %s', $fpath, $tpath));
+                $this->_log(7, sprintf(' - %s', $rpath));
             } else {
+                $this->_result = 1;
                 $this->_log(4, sprintf('Unable to locate file : %s', $fpath));
             }
         }
 
-        $this->_log(6, sprintf('%s files copied to %s', count($entries), $to));
+        $this->_log(5, sprintf('%s files copied', count($entries)));
 
         if (!$useComposer) {
-            $this->_log(7, sprintf('Skipping composer install as requested by configuration'));
+            $this->_log(6, sprintf('Skipping composer install as requested by configuration'));
 
             return $to;
         }
@@ -389,7 +440,7 @@ class Bundler
             return $to;
         }
 
-        $this->_log(7, sprintf('Launching composer install'));
+        $this->_log(6, sprintf('Launching composer install'));
 
         // Update composer.json based on config
         $content = (array)json_decode(file_get_contents($composer) ?: "{}", true, 512, JSON_THROW_ON_ERROR);
@@ -397,9 +448,12 @@ class Bundler
         file_put_contents($composer, json_encode($content, JSON_PRETTY_PRINT));
 
         // Run composer install in target folder
-        exec("composer install --no-progress --working-dir={$to} --classmap-authoritative --quiet");
-
-        $this->_log(6, sprintf('Composer dependencies installation done'));
+        if (exec("composer install --no-progress --working-dir={$to} --classmap-authoritative --quiet") === false) {
+            $this->_result = 2;
+            $this->_log(3, sprintf('Unable to execute composer install'));
+        } else {
+            $this->_log(5, sprintf('Composer dependencies installation done'));
+        }
 
         return $to;
     }
@@ -413,30 +467,43 @@ class Bundler
      */
     public function scope(string $from, string $to): string
     {
-        $this->_log(7, 'Start dependencies scoping');
+        $this->_log(6, 'Start dependencies scoping');
 
         $scoper = Resolver::makeAbsolute('vendor/bin/php-scoper');
         $config = $this->getRootPath('scoper.inc.php');
 
         if (!is_file($scoper)) {
-            $this->_log(2, '[WordpressBundler] Dependencies obfuscation is required but unable to locate PHP-Scoper script');
+            $this->_log(
+                2,
+                '[WordpressBundler] Dependencies obfuscation is required but unable to locate PHP-Scoper script'
+            );
 
             return $from;
         }
 
-        if (exec("{$scoper} add-prefix {$from} -o {$to} -f" . (is_file($config) ? " -c {$config}" : " --no-config")) === false) {
+        if (
+            exec(
+                "{$scoper} add-prefix {$from} -o {$to} -f -q" . (is_file($config) ? " -c {$config}" : " --no-config")
+            ) === false
+        ) {
+            $this->_result = 3;
             $this->_log(3, 'Unable to apply dependency scoping. Php-scoper reports a failure');
 
             return $from;
         } else {
-            if (exec("composer dump-autoload --working-dir={$to} --classmap-authoritative --quiet") === false) {
-                $this->_log(3, 'Unable dump composer autoload after hosting');
+            if (
+                exec(
+                    "composer dump-autoload --working-dir={$to} --classmap-authoritative --quiet"
+                ) === false
+            ) {
+                $this->_result = 3;
+                $this->_log(3, 'Unable to dump composer autoload after scoping');
 
                 return $from;
             }
         }
 
-        $this->_log(6, sprintf('Dependencies scoped'));
+        $this->_log(5, sprintf('Dependencies scoped and autoload dumped'));
 
         return $to;
     }
@@ -450,15 +517,21 @@ class Bundler
      */
     public function zip(string $from, string $to): string
     {
-        $this->_log(7, sprintf('Zipping started'));
-        $zip = new ZipFile();
-        $zip
-          ->addDirRecursive($from)
-          ->setCompressionLevel(ZipCompressionLevel::MAXIMUM)
-          ->saveAsFile($to)
-          ->close();
+        $this->_log(6, sprintf('Zipping files started'));
+        try {
+            $zip = new ZipFile();
+            $zip
+                ->addDirRecursive($from)
+                ->setCompressionLevel(ZipCompressionLevel::MAXIMUM)
+                ->saveAsFile($to)
+                ->close();
 
-          $this->_log(6, sprintf('Zip bundle created'));
+            $this->_log(5, sprintf('Zip bundle created'));
+        } catch (ZipException $err) {
+            $this->_result = 4;
+            $this->_log(3, $err->getMessage());
+        }
+
         return $to;
     }
 
@@ -474,7 +547,7 @@ class Bundler
         $basepath = $this->getBasePath();
 
         if (!is_file($path)) {
-            $this->_logger->log(4, sprintf('Missing expected file %s', $path));
+            $this->_log(4, sprintf('Missing expected file %s', $path));
 
             return $matches;
         }
@@ -482,7 +555,7 @@ class Bundler
         $content = file_get_contents($path);
 
         if ($content === false) {
-            $this->_logger->log(4, sprintf('Unable to parse content of %s', $path));
+            $this->_log(4, sprintf('Unable to parse content of %s', $path));
 
             return $matches;
         }
@@ -552,7 +625,7 @@ class Bundler
      */
     protected function _loadConfig()
     {
-        $this->_log(7, 'Looking for configuration file(s)');
+        $this->_log(6, 'Looking for configuration file(s)');
         $loaded = [];
 
         try {
@@ -571,6 +644,7 @@ class Bundler
                 $this->_config->load($path, $key, 'overrides');
                 $loaded[] = "{$path}:{$key}";
             } catch (\RuntimeException $err) {
+                $this->_result = 5;
                 $this->_log(3, $err->getMessage());
             }
         }
@@ -579,7 +653,7 @@ class Bundler
             $this->_log(7, sprintf('Loaded configuration from %s', $file));
         }
 
-        $this->_log(6, sprintf('Configuration files found : %d', count($loaded)));
+        $this->_log(5, sprintf('Configuration files found : %d', count($loaded)));
 
         return $this;
     }
@@ -594,7 +668,11 @@ class Bundler
      */
     protected function _log(int $priority, string $message)
     {
+        $logEnabled = $this->_config->getBoolean('log');
         switch ($priority) {
+            case -1:
+                $priority = 5;
+                break;
             case 0:
                 $message = "\033[1;31m{$message}\033[37m";
                 break;
@@ -621,7 +699,10 @@ class Bundler
                 break;
         }
 
-        $this->_logger->log($priority, $message);
+        if ($logEnabled) {
+            $this->_logger->log($priority, $message);
+            // ob_flush();
+        }
 
         if ($priority <= 3 && $this->_config->getBoolean('debug')) {
             throw new \RuntimeException("[WordpressBundler] Aborting bundling");

@@ -209,7 +209,7 @@ class BundlerTest extends TestCase
         $from = Resolver::makeAbsolute('fixtures/config');
         $bundler = new Bundler([
             'rootpath' => $from,
-            'loglevel' => 7,
+            'loglevel' => 3,
         ]);
 
         $bundler->bundle();
@@ -229,7 +229,7 @@ class BundlerTest extends TestCase
         $from = Resolver::makeAbsolute('fixtures/scoper');
         $bundler = new Bundler([
             'rootpath' => $from,
-            'loglevel' => 7,
+            'loglevel' => 3,
         ]);
 
         $bundler->bundle();
@@ -246,7 +246,8 @@ class BundlerTest extends TestCase
         $bundler = new Bundler([
             'phpscoper' => true,
             'rootpath' => $from,
-            'loglevel' => 7,
+            'log' => false,
+            'loglevel' => 5,
         ]);
 
         $bundler->bundle();
