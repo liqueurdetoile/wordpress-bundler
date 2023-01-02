@@ -58,6 +58,7 @@ class BundleCommand extends Command
      */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
+        /** @var array $config */
         $config = $input->getOption('config');
         $bundler = new Bundler(['log' => true]);
         $bundler->bundle([

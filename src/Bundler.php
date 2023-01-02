@@ -49,6 +49,7 @@ class Bundler
      * Caches bundler base path
      *
      * @var string
+     * @psalm-suppress PropertyNotSetInConstructor
      */
     protected $_basepath;
 
@@ -69,7 +70,7 @@ class Bundler
     /**
      * Stores Logger instance
      *
-     * @var \Lqdt\WordpressBundler\Logger
+     * @var \Laminas\Log\Logger
      */
     protected $_logger;
 
@@ -91,6 +92,7 @@ class Bundler
      * Caches bundler root path
      *
      * @var string
+     * @psalm-suppress PropertyNotSetInConstructor
      */
     protected $_rootpath;
 
@@ -113,7 +115,7 @@ class Bundler
             $this->_config = new Config($config, $this->_defaults);
         }
 
-        $this->_logger = Logger::get($this->_config->get('loglevel'));
+        $this->_logger = Logger::get($this->_config->getInt('loglevel'));
         $this->_fs = new FileSystem();
         $this->_log(-1, 'WordpressBundler - Bundling starting');
         $this->_log(-1, '------------------------------------');
@@ -142,7 +144,11 @@ class Bundler
     public function getRootPath(?string $path = null): string
     {
         if (empty($this->_rootpath)) {
-            $this->setRootPath($this->_config->get('rootpath') ?? Resolver::getRootPath());
+            try {
+                $this->setRootPath($this->_config->getString('rootpath'));
+            } catch (\TypeError $err) {
+                $this->setRootPath(Resolver::getRootPath());
+            }
         }
 
         return $path === null ?
@@ -179,7 +185,11 @@ class Bundler
     public function getBasePath(?string $path = null): string
     {
         if (empty($this->_basepath)) {
-            $this->setBasePath($this->_config->get('basepath') ?? $this->getRootPath());
+            try {
+                $this->setBasePath($this->_config->getString('basepath'));
+            } catch (\TypeError $err) {
+                $this->setBasePath($this->getRootPath());
+            }
         }
 
         return $path === null ?
@@ -231,8 +241,8 @@ class Bundler
      *
      * If a list is provided, files will be appended to it
      *
-     * @param array $exclude Exclude list
-     * @return array
+     * @param string[] $exclude Exclude list
+     * @return string[]
      */
     public function parseGitIgnore(array $exclude = []): array
     {
@@ -255,8 +265,8 @@ class Bundler
      *
      * If a list is provided, files will be appended to it
      *
-     * @param array $exclude Exclude list
-     * @return array
+     * @param string[] $exclude Exclude list
+     * @return string[]
      */
     public function parseWpIgnore(array $exclude = []): array
     {
@@ -280,8 +290,8 @@ class Bundler
      *
      * If a list is provided, files will be appended to it
      *
-     * @param array $exclude Exclude list
-     * @return array
+     * @param string[] $include Include list
+     * @return string[]
      */
     public function parseWpInclude(array $include = []): array
     {
@@ -306,13 +316,14 @@ class Bundler
      *
      * Returned entries will be split between files and folders keys
      *
-     * @return array<string>
+     * @return array<string,string>
      */
     public function getEntries(): array
     {
         $this->_log(6, sprintf('Paths resolving starting'));
 
         try {
+            /** @var string[] $include */
             $include = $this->_config->getArray('include');
             // Add .wpinclude paths
             $include = $this->parseWpInclude($include);
@@ -322,6 +333,7 @@ class Bundler
         }
 
         try {
+            /** @var string[] $exclude */
             $exclude = $this->_config->getArray('exclude');
         } catch (\TypeError $err) {
             $exclude = [];
@@ -410,7 +422,7 @@ class Bundler
             $this->_config->getBoolean('keep.dev-dependencies');
         $entries = $this->getEntries();
 
-        $this->_log(6, sprintf('Copy files', $to));
+        $this->_log(6, sprintf('Copy files'));
 
         foreach ($entries as $rpath => $fpath) {
             $tpath = Resolver::makeAbsolute($rpath, $to);
@@ -448,7 +460,8 @@ class Bundler
         file_put_contents($composer, json_encode($content, JSON_PRETTY_PRINT));
 
         // Run composer install in target folder
-        if (exec("composer install --no-progress --working-dir={$to} --classmap-authoritative --quiet") === false) {
+        exec("composer install --no-progress --working-dir={$to} --classmap-authoritative --quiet", $output, $result);
+        if ($result > 0) {
             $this->_result = 2;
             $this->_log(3, sprintf('Unable to execute composer install'));
         } else {
@@ -481,26 +494,30 @@ class Bundler
             return $from;
         }
 
-        if (
-            exec(
-                "{$scoper} add-prefix {$from} -o {$to} -f -q" . (is_file($config) ? " -c {$config}" : " --no-config")
-            ) === false
-        ) {
+        exec(
+            "{$scoper} add-prefix {$from} -o {$to} -f -q" . (is_file($config) ? " -c {$config}" : " --no-config"),
+            $output,
+            $result
+        );
+
+        if ($result > 0) {
             $this->_result = 3;
             $this->_log(3, 'Unable to apply dependency scoping. Php-scoper reports a failure');
 
             return $from;
-        } else {
-            if (
-                exec(
-                    "composer dump-autoload --working-dir={$to} --classmap-authoritative --quiet"
-                ) === false
-            ) {
-                $this->_result = 3;
-                $this->_log(3, 'Unable to dump composer autoload after scoping');
+        }
 
-                return $from;
-            }
+        exec(
+            "composer dump-autoload --working-dir={$to} --classmap-authoritative --quiet",
+            $output,
+            $result
+        );
+
+        if ($result > 0) {
+            $this->_result = 3;
+            $this->_log(3, 'Unable to dump composer autoload after scoping');
+
+            return $from;
         }
 
         $this->_log(5, sprintf('Dependencies scoped and autoload dumped'));
@@ -539,7 +556,7 @@ class Bundler
      * Processes a gitignore like file to filter allowed paths
      *
      * @param string $path Path to file
-     * @return array
+     * @return array<string>
      */
     protected function _getMatchesFromGitFile(string $path): array
     {
@@ -560,21 +577,24 @@ class Bundler
             return $matches;
         }
 
+        /** @psalm-var \TOGoS_GitIgnore_Ruleset $ruleset */
         $ruleset = \TOGoS_GitIgnore_Ruleset::loadFromString($content);
         $finder = new \TOGoS_GitIgnore_FileFinder([
             'ruleset' => $ruleset,
             'invertRulesetResult' => false,
             'includeDirectories' => true,
             'defaultResult' => false,
-            'callback' => function ($f, $result) use ($basepath, &$matches) {
+            'callback' => function (string $f, bool $result) use ($basepath, &$matches) {
                 if ($result === true) {
-                    $matches[$f] = Resolver::makeAbsolute($f, $basepath);
+                    /** @psalm-var string[] $matches */
+                    $matches[] = Resolver::makeAbsolute($f, $basepath);
                 }
             },
         ]);
 
         $finder->findFiles($basepath);
 
+        /** @psalm-var string[] $matches */
         return $matches;
     }
 
@@ -638,9 +658,24 @@ class Bundler
 
         $files = $this->_config->getArray('config');
 
+        /** @psalm-suppress MixedAssignment */
         foreach ($files as $path => $key) {
+            if (!is_string($path)) {
+                $this->_log(3, 'Unable to parse additional config file path (not a string)');
+
+                break;
+            }
+
+            if (!(is_string($key) || $key == null)) {
+                $this->_log(3, 'Unable to parse additional config file key (not a string or null');
+
+                break;
+            }
+
             $path = Resolver::makeAbsolute($path, $this->getBasePath());
+
             try {
+                /** @psalm-var null|string $key */
                 $this->_config->load($path, $key, 'overrides');
                 $loaded[] = "{$path}:{$key}";
             } catch (\RuntimeException $err) {

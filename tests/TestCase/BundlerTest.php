@@ -179,6 +179,7 @@ class BundlerTest extends TestCase
         $bundler = new Bundler(['basepath' => 'fixtures/config', 'include' => $include, 'exclude' => $exclude, 'gitignore' => false, 'wpignore' => false, 'loglevel' => 3]);
         $entries = $bundler->getEntries();
         $mapped = [];
+        /** @var string $file */
         foreach ($expected as $file) {
             $mapped[$file] = Resolver::makeAbsolute($file, $bundler->getBasePath());
         }

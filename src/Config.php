@@ -32,6 +32,7 @@ class Config
      * Stores default configuration and enabled dot notation access
      *
      * @var \Adbar\Dot
+     * @psalm-suppress PropertyNotSetInConstructor
      */
     protected $_defaults;
 
@@ -39,6 +40,7 @@ class Config
      * Stores fallback configuration that may be used if required key is missing in overrides and default configuration
      *
      * @var \Adbar\Dot
+     * @psalm-suppress PropertyNotSetInConstructor
      */
     protected $_fallbacks;
 
@@ -46,6 +48,7 @@ class Config
      * Stores configuration overrides that have priority on default and fallback settings
      *
      * @var \Adbar\Dot
+     * @psalm-suppress PropertyNotSetInConstructor
      */
     protected $_overrides;
 
@@ -346,7 +349,9 @@ class Config
             );
         }
 
-        self::write($this->{$method}(), $path ?? $this->_path, $key ?? $this->_key, $merge);
+        /** @var \Adbar\Dot $data */
+        $data = $this->{$method}();
+        self::write($data, $path ?? $this->_path, $key ?? $this->_key, $merge);
 
         return $this;
     }
@@ -381,16 +386,17 @@ class Config
      * @param string   $key       Key to fetch
      * @param string   $type      Expected data type as string
      * @param callable $validator Validator callback
-     * @throws \TypeError   If returned value is
+     * @throws \TypeError   If returned value is not validated
      * @return mixed
      */
     public function getWithType(string $key, string $type, callable $validator)
     {
+        /** @psalm-suppress MixedAssignment */
         $v = $this->get($key);
 
-        if (!$validator($v)) {
+        if (!call_user_func($validator, $v)) {
             throw new \TypeError(
-                sprintf('Wrong value type for key %s. Expecting a %s and got %s', $key, $type, gettype($v))
+                sprintf('Wrong value type for key %s. Expecting %s and got %s', $key, $type, gettype($v))
             );
         }
 
@@ -402,10 +408,12 @@ class Config
      *
      * @param  string $key Key
      * @return array
+     * @psalm-suppress MixedReturnStatement
+     * @psalm-suppress MixedInferredReturnType
      */
     public function getArray(string $key): array
     {
-        return $this->getWithType($key, 'array', 'is_array');
+        return $this->getWithType($key, 'array', 'is_array'); // @phpstan-ignore-line
     }
 
     /**
@@ -413,10 +421,25 @@ class Config
      *
      * @param  string $key Key
      * @return boolean
+     * @psalm-suppress MixedReturnStatement
+     * @psalm-suppress MixedInferredReturnType
      */
     public function getBoolean(string $key): bool
     {
-        return $this->getWithType($key, 'boolean', 'is_bool');
+        return $this->getWithType($key, 'boolean', 'is_bool');  // @phpstan-ignore-line
+    }
+
+    /**
+     * Fetch a value by key and check that it is an int
+     *
+     * @param  string $key Key
+     * @return int
+     * @psalm-suppress MixedReturnStatement
+     * @psalm-suppress MixedInferredReturnType
+     */
+    public function getInt(string $key): int
+    {
+        return $this->getWithType($key, 'int', 'is_int');  // @phpstan-ignore-line
     }
 
     /**
@@ -424,10 +447,12 @@ class Config
      *
      * @param  string $key Key
      * @return string
+     * @psalm-suppress MixedReturnStatement
+     * @psalm-suppress MixedInferredReturnType
      */
     public function getString(string $key): string
     {
-        return $this->getWithType($key, 'string', 'is_string');
+        return $this->getWithType($key, 'string', 'is_string');  // @phpstan-ignore-line
     }
 
     /**
