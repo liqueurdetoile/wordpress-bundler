@@ -37,8 +37,7 @@
         "symfony\/var-dumper": "^5.4"
     },
     "bin": [
-        "bin\/wpbundler",
-        "bin\/wpbundler.bat"
+        "bin\/wpbundler"
     ],
     "config": {
         "allow-plugins": {
