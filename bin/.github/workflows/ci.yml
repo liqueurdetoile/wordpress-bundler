@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "1.x-next"
+  pull_request:
+    branches:
+      - "*"
+  schedule:
+    - cron: "0 0 1 * *"
+
+jobs:
+  testsuite:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version: ["7.2", "7.4", "8.0", "8.1", "8.2"]
+        coverage: ["no-coverage"]
+        include:
+          - php-version: "7.4"
+            coverage: "pcov"
+
+    env:
+      PHP_VERSION: ${{ matrix.php-version }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-version }}
+          extensions: mbstring, intl, apcu
+          ini-values: apc.enable_cli = 1
+          tools: cs2pr
+          coverage: ${{ matrix.coverage }}
+
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Get date part for cache key
+        id: key-date
+        run: echo "name=$(date +'%Y-%m')" >> $GITHUB_OUTPUT
+
+      - name: Cache composer dependencies
+        uses: actions/cache@v3
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ steps.key-date.outputs.date }}-${{ hashFiles('composer.json') }}-${{ matrix.prefer-lowest }}
+
+      - name: Composer install
+        run: |
+          if ${{ matrix.php-version == '8.2' }}; then
+            composer update --ignore-platform-req=php
+          else
+            composer update
+          fi
+
+      - name: Run PHPUnit (No coverage)
+        if: matrix.coverage == 'no-coverage'
+        run: vendor/bin/phpunit
+
+      - name: Run PHPUnit (With coverage)
+        if: matrix.coverage == 'pcov'
+        run: |
+          vendor/bin/phpunit -c phpunit.coverage.xml.dist --coverage-clover logs/clover.xml
+          composer global require php-coveralls/php-coveralls
+          php-coveralls --coverage_clover=logs/clover.xml --json_path=logs/coveralls-upload.json -v
+        env:
+          COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run PHP CodeSniffer
+        if: ${{ matrix.php-version == '7.4' && matrix.coverage == 'no-coverage'}}
+        run: vendor/bin/phpcs --report=checkstyle src/ tests/TestCase | cs2pr
+
+      - name: Run PHPstan
+        if: ${{ matrix.php-version == '7.4' && matrix.coverage == 'no-coverage'}}
+        run: vendor/bin/phpstan analyze --memory-limit 1G --error-format=github
+
+      - name: Run Psalm
+        if: ${{ matrix.php-version == '7.4' && matrix.coverage == 'no-coverage'}}
+        run: vendor/bin/psalm
