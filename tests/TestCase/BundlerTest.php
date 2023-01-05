@@ -188,7 +188,6 @@ class BundlerTest extends TestCase
         $from = Resolver::makeAbsolute('tests/fixtures/scoper');
         $bundler = new Bundler([
             'rootpath' => $from,
-            'log' => true,
             'loglevel' => 7,
         ]);
 
