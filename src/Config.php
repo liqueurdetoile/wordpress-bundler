@@ -6,6 +6,7 @@ namespace Lqdt\WordpressBundler;
 use Adbar\Dot;
 use InvalidArgumentException;
 use JsonException;
+use Lqdt\WordpressBundler\Exception\MissingKeyConfigException;
 use RuntimeException;
 
 /**
@@ -96,20 +97,20 @@ class Config
     }
 
     /**
-     * Validates and normaizes a path to a file. If no path is provided, validation
+     * Validates and normalizes a path to a file. If no path is provided, validation
      * will returns the path to the root composer.json in project
      *
      * @param string|null $path  Path to validate
-     * @param boolean     $throw If true, a missing file will throw a RuntimeException
+     * @param bool     $throw If true, a missing file will throw a RuntimeException
      * @throws \RuntimeException If no file can be found at normalized target path
      * @return string
      */
     public static function getConfigFilePath(?string $path = null, bool $throw = true): string
     {
-        $basepath = Resolver::getRootPath($path);
+        $basepath = Resolver::makeAbsolute($path);
 
         if (is_dir($basepath)) {
-            $basepath = Resolver::normalize($basepath . '/composer.json');
+            $basepath = Resolver::makeAbsolute('/composer.json', $basepath);
         }
 
         if (!is_file($basepath) && $throw) {
@@ -127,13 +128,13 @@ class Config
      *
      * @param  string|null $path  Path to JSON configuration file. Defaults to composer.json at root project
      * @param  string|null $key   Optional key in configuration to read from
-     * @param  boolean     $throw If `true`, any error in accessing file content will raise an exception. Otherwise an empty Dot object is returned
+     * @param  bool     $throw If `true`, any error in accessing file content will raise an exception. Otherwise an empty Dot object is returned
      * @return \Adbar\Dot
      * @throws \RuntimeException Whenever reading of the file is not succesful
      */
     public static function read(?string $path = null, ?string $key = null, bool $throw = true): Dot
     {
-        $path = self::getConfigFilePath($path);
+        $path = self::getConfigFilePath($path ?? 'composer.json');
         $content = file_get_contents($path);
 
         if ($content === false) {
@@ -184,7 +185,7 @@ class Config
      * @param array|\Adbar\Dot $config Configuration to save
      * @param string           $path   Target file.  Defaults to composer.json at root project
      * @param string           $key    Key in target file
-     * @param boolean          $merge  If true, the configuration will be merged into configuration
+     * @param bool          $merge  If true, the configuration will be merged into configuration
      * @return string Path to target file
      */
     public static function write($config, ?string $path = null, ?string $key = null, bool $merge = false): string
@@ -329,7 +330,7 @@ class Config
      * @param  string      $registry Configuration registry to save. Can be any between fallbacks, overrides, defaults and config
      * @param  string|null $path     Path to JSON configuration file. Defaults to composer.json at root project
      * @param  string|null $key      Optional key in configuration to read from
-     * @param boolean     $merge    If true, the configuration will be merged into configuration already present in file
+     * @param bool     $merge    If true, the configuration will be merged into configuration already present in file
      * @return self
      */
     public function save(
@@ -357,27 +358,63 @@ class Config
     }
 
     /**
-     * Get whole a configuration or a targetted key. Dotted keys are allowed to access nested values.
+     * Ensurs that a given key exists in configuration and is not null
      *
-     * If no key is passed, the whole configuration is returned as an array
-     *
-     * @param  string|null $key Key to fetch
-     * @return mixed
-     * @throws \RuntimeException If missing key
+     * @param string $key Key to check
+     * @return bool
      */
-    public function get(?string $key = null)
+    public function has(string $key): bool
     {
         $config = $this->getConfig();
 
-        if ($key === null) {
-            return $config->all();
-        }
+        return $config->has($key) && $config->get($key) !== null;
+    }
+
+    /**
+     * Returns the whole configuration with merged priorities
+     *
+     * @return array
+     */
+    public function all(): array
+    {
+        return $this->getConfig()->all();
+    }
+
+    /**
+     * Get whole a configuration or a targetted key. Dotted keys are allowed to access nested values.
+     *
+     * If the key is missing, the fallback value will be returned
+     *
+     * @param  string $key Key to fetch
+     * @param  mixed $fallback
+     * @return mixed
+     * @throws \RuntimeException If missing key and no fallback defined
+     */
+    public function get(string $key, $fallback = null)
+    {
+        $config = $this->getConfig();
+
+        return $config->has($key) ? $config->get($key) : $fallback;
+    }
+
+    /**
+     * Get whole a configuration or a targetted key. Dotted keys are allowed to access nested values.
+     *
+     * If the key is missing or null, an exception will be raised
+     *
+     * @param  string $key Key to fetch
+     * @return mixed
+     * @throws \Lqdt\WordpressBundler\Exception\MissingKeyConfigException If missing key and no fallback defined
+     */
+    public function getOrFail(string $key)
+    {
+        $config = $this->getConfig();
 
         if ($config->has($key)) {
             return $config->get($key);
         }
 
-        throw new RuntimeException(sprintf('[WordpressBundler] Missing key "%s" in configuration', $key));
+        throw new MissingKeyConfigException($key);
     }
 
     /**
@@ -386,13 +423,14 @@ class Config
      * @param string   $key       Key to fetch
      * @param string   $type      Expected data type as string
      * @param callable $validator Validator callback
-     * @throws \TypeError   If returned value is not validated
+     * @param mixed    $fallback
      * @return mixed
+     * @throws \TypeError   If returned value is not validated
      */
-    public function getWithType(string $key, string $type, callable $validator)
+    public function getWithType(string $key, string $type, callable $validator, $fallback = null)
     {
         /** @psalm-suppress MixedAssignment */
-        $v = $this->get($key);
+        $v = $fallback === null ? $this->getOrFail($key) : $this->get($key, $fallback);
 
         if (!call_user_func($validator, $v)) {
             throw new \TypeError(
@@ -407,52 +445,56 @@ class Config
      * Fetch a value by key and check that it is an array
      *
      * @param  string $key Key
+     * @param  array|null $fallback Fallback value
      * @return array
-     * @psalm-suppress MixedReturnStatement
-     * @psalm-suppress MixedInferredReturnType
      */
-    public function getArray(string $key): array
+    public function getArray(string $key, ?array $fallback = null): array
     {
-        return $this->getWithType($key, 'array', 'is_array'); // @phpstan-ignore-line
+        /** @var array */
+        return $this->getWithType($key, 'array', 'is_array', $fallback);
     }
 
     /**
-     * Fetch a value by key and check that it is a boolean
+     * Fetch a value by key and check that it is a bool
      *
      * @param  string $key Key
-     * @return boolean
-     * @psalm-suppress MixedReturnStatement
-     * @psalm-suppress MixedInferredReturnType
+     * @param  bool|null $fallback Fallback value
+     * @return bool
      */
-    public function getBoolean(string $key): bool
+    public function getBoolean(string $key, ?bool $fallback = null): bool
     {
-        return $this->getWithType($key, 'boolean', 'is_bool');  // @phpstan-ignore-line
+        /** @var bool */
+        return $this->getWithType($key, 'bool', 'is_bool', $fallback);
     }
 
     /**
      * Fetch a value by key and check that it is an int
      *
      * @param  string $key Key
+     * @param  int|null $fallback Fallback value
      * @return int
      * @psalm-suppress MixedReturnStatement
      * @psalm-suppress MixedInferredReturnType
      */
-    public function getInt(string $key): int
+    public function getInt(string $key, ?int $fallback = null): int
     {
-        return $this->getWithType($key, 'int', 'is_int');  // @phpstan-ignore-line
+        /** @var int */
+        return $this->getWithType($key, 'int', 'is_int', $fallback);
     }
 
     /**
      * Fetch a value by key and check that it is a string
      *
      * @param  string $key Key
+     * @param  string|null $fallback Fallback value
      * @return string
      * @psalm-suppress MixedReturnStatement
      * @psalm-suppress MixedInferredReturnType
      */
-    public function getString(string $key): string
+    public function getString(string $key, ?string $fallback = null): string
     {
-        return $this->getWithType($key, 'string', 'is_string');  // @phpstan-ignore-line
+        /** @var string */
+        return $this->getWithType($key, 'string', 'is_string', $fallback);
     }
 
     /**
@@ -485,6 +527,34 @@ class Config
                     )
                 );
         }
+
+        return $this;
+    }
+
+    /**
+     * Merges a configuration into a given registry
+     *
+     * @param array $config
+     * @param string $registry
+     * @throws \InvalidArgumentException
+     * @return \Lqdt\WordpressBundler\Config
+     */
+    public function merge(array $config, string $registry = 'defaults')
+    {
+        $method = 'get' . ucFirst($registry);
+        if (!method_exists($this, $method)) {
+            throw new InvalidArgumentException(
+                sprintf(
+                    '[WordpressBundler] Source config registry is not valid. ' .
+                    'Expecting defaults, fallbacks or overrides and get %s',
+                    $registry
+                )
+            );
+        }
+
+        /** @var \Adbar\Dot $registry */
+        $registry = $this->{$method}();
+        $registry->mergeRecursiveDistinct(new Dot($config));
 
         return $this;
     }

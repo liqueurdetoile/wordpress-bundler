@@ -19,7 +19,7 @@ class BundlerTest extends TestCase
 
     public function testBundlerInit(): void
     {
-        $bundler = new Bundler(['basepath' => 'fixtures/noconfig', 'loglevel' => 3]);
+        $bundler = new Bundler(['rootpath' => 'tests/fixtures/noconfig', 'loglevel' => 3]);
         $dir = $bundler->getBasePath();
 
         $this->assertTrue(file_exists($dir . '/plugin.php'));
@@ -30,32 +30,21 @@ class BundlerTest extends TestCase
         $this->assertEquals(8, $bundler->getConfig()->get('loglevel'));
     }
 
-    public function testGetComposerPath(): void
-    {
-        $bundler = new Bundler(['loglevel' => 3]);
-        $this->assertEquals(Resolver::makeAbsolute('composer.json', Resolver::getRootPath()), $bundler->getComposerPath());
-
-        $bundler = new Bundler(['rootpath' => 'fixtures/noconfig', 'loglevel' => 3]);
-        $this->assertEquals(Resolver::makeAbsolute('composer.json', $bundler->getRootPath()), $bundler->getComposerPath());
-        $this->assertNotEquals(Resolver::makeAbsolute('composer.json', Resolver::getRootPath()), $bundler->getComposerPath());
-    }
-
     public function testGetBasePath(): void
     {
-        $bundler = new Bundler(['loglevel' => 3]);
+        $bundler = new Bundler();
         $this->assertEquals(Resolver::getRootPath(), $bundler->getBasePath());
 
-        $bundler = new Bundler(['loglevel' => 3]);
-        $this->assertEquals(Resolver::makeAbsolute(Resolver::getRootPath()  . '/README.MD'), $bundler->getBasePath('README.MD'));
+        $bundler = new Bundler(['basepath' => 'tests/fixtures/noconfig']);
+        $this->assertEquals(Resolver::makeAbsolute('tests/fixtures/noconfig', Resolver::getRootPath()), $bundler->getBasePath());
 
-        $bundler = new Bundler(['rootpath' => 'fixtures/noconfig', 'loglevel' => 3]);
-        $this->assertEquals($bundler->getRootPath(), $bundler->getBasePath());
-        $this->assertNotEquals(Resolver::getRootPath(), $bundler->getBasePath());
+        $bundler = new Bundler(['rootpath' => 'tests/fixtures', 'basepath' => 'noconfig']);
+        $this->assertEquals($bundler->getRootPath() . '/noconfig', $bundler->getBasePath());
     }
 
     public function testLoadingConfigFromComposerJson(): void
     {
-        $bundler = new Bundler(['rootpath' => 'fixtures/config', 'loglevel' => 3]);
+        $bundler = new Bundler(['rootpath' => 'tests/fixtures/config']);
         $config = $bundler->getConfig();
         $this->assertSame(['nottobeseen.php'], $config->getArray('exclude'));
         $this->assertFalse($config->getBoolean('zip'));
@@ -64,65 +53,27 @@ class BundlerTest extends TestCase
     public function testLoadingConfigFromCustomFile(): void
     {
         // No need to alter root path here as composer.json path will be found from basepath
-        $bundler = new Bundler(['basepath' => 'fixtures/config', 'loglevel' => 3, 'config' => ['composer.json' => 'extra.bundler']]);
+        $bundler = new Bundler(['rootpath' => 'tests/fixtures/noconfig']);
         $config = $bundler->getConfig();
+        $this->assertEmpty($config->get('exclude'));
+
+        $bundler->loadConfig([Resolver::makeAbsolute('composer.json', Resolver::makeAbsolute('tests/fixtures/config')) => 'extra.bundler']);
+
         $this->assertSame(['nottobeseen.php'], $config->getArray('exclude'));
         $this->assertFalse($config->getBoolean('zip'));
-    }
-
-    public function testParseGitIgnore(): void
-    {
-        $bundler = new Bundler();
-        $ignored = $bundler->parseGitIgnore();
-        $this->assertNotEmpty($ignored);
-
-        $bundler = new Bundler(['gitignore' => false]);
-        $ignored = $bundler->parseGitIgnore();
-        $this->assertEmpty($ignored);
-    }
-
-    public function testParseWpIgnore(): void
-    {
-        $path = Resolver::makeAbsolute('.wpignore');
-        file_put_contents($path, 'README.MD');
-
-        $bundler = new Bundler();
-        $ignored = $bundler->parseWpIgnore();
-        $this->assertNotEmpty($ignored);
-
-        $bundler = new Bundler(['wpignore' => false]);
-        $ignored = $bundler->parseWpIgnore();
-        $this->assertEmpty($ignored);
-
-        unlink($path);
-    }
-
-    public function testParseWpInclude(): void
-    {
-        $path = Resolver::makeAbsolute('.wpinclude');
-        file_put_contents($path, 'README.MD');
-
-        $bundler = new Bundler();
-        $included = $bundler->parseWpInclude();
-        $this->assertNotEmpty($included);
-
-        $bundler = new Bundler(['wpinclude' => false]);
-        $included = $bundler->parseWpInclude();
-        $this->assertEmpty($included);
-
-        unlink($path);
     }
 
     public function getEntriesData(): array
     {
         return [
             [
-                null, null, [
-                    'assets/index.css',
-                    'assets/script.js',
-                    'inc/class-test.php',
+                null, null, [],
+            ],
+            [
+                [], [], [
+                    'assets',
+                    'inc',
                     'composer.json',
-                    'nottobeseen.php',
                     'plugin.php',
                 ],
             ],
@@ -131,42 +82,40 @@ class BundlerTest extends TestCase
             ],
             [
                 ['assets'], null, [
-                    'assets/index.css',
-                    'assets/script.js',
+                    'assets',
                 ],
             ],
             [
-                null, ['*.json'], [
-                    'assets/index.css',
-                    'assets/script.js',
-                    'inc/class-test.php',
+                ['*'], ['*.json'], [
+                    'assets',
+                    'inc',
                     'nottobeseen.php',
                     'plugin.php',
                 ],
             ],
             [
-                null, ['assets'], [
-                    'inc/class-test.php',
+                ['*'], ['assets'], [
+                    'inc',
                     'composer.json',
                     'nottobeseen.php',
                     'plugin.php',
                 ],
             ],
             [
-                null, ['*.json', 'assets/index.css'], [
-                    'assets/script.js',
-                    'inc/class-test.php',
+                ['*'], ['*.json', 'assets/index.css'], [
+                    'assets',
+                    'inc',
                     'nottobeseen.php',
                     'plugin.php',
-                ],
+                ], ['assets/index.css'],
             ],
             [
-                null, ['*.json', '**/*.css'], [
-                    'assets/script.js',
-                    'inc/class-test.php',
+                ['*'], ['*.json', '**/*.css'], [
+                    'assets',
+                    'inc',
                     'nottobeseen.php',
                     'plugin.php',
-                ],
+                ], ['assets/index.css'],
             ],
         ];
     }
@@ -174,32 +123,41 @@ class BundlerTest extends TestCase
     /**
      * @dataProvider getEntriesData
      */
-    public function testGetEntries(?array $include, ?array $exclude, array $expected): void
+    public function testGetEntries(?array $include, ?array $exclude, array $expected, array $removed = []): void
     {
-        $bundler = new Bundler(['basepath' => 'fixtures/config', 'include' => $include, 'exclude' => $exclude, 'gitignore' => false, 'wpignore' => false, 'loglevel' => 3]);
-        $entries = $bundler->getEntries();
+        $bundler = new Bundler(['rootpath' => 'tests/fixtures/config', 'include' => $include, 'exclude' => $exclude]);
+        $finder = $bundler->getFinder();
+        $entries = $finder->getEntries();
+        $entriesToRemove = $finder->getEntriesToRemove($bundler->getBasePath());
         $mapped = [];
-        /** @var string $file */
-        foreach ($expected as $file) {
-            $mapped[$file] = Resolver::makeAbsolute($file, $bundler->getBasePath());
+
+        foreach ($expected as $p) {
+            $mapped[$p] = Resolver::makeAbsolute($p, $bundler->getBasePath());
         }
 
-        asort($mapped);
+        $removed = array_map(function ($p) use ($bundler) {
+            return Resolver::makeAbsolute($p, $bundler->getBasePath());
+        }, $removed);
+
         asort($entries);
+        asort($entriesToRemove);
+        asort($mapped);
+        asort($removed);
 
         $this->assertSame($mapped, $entries);
+        $this->assertSame($removed, $entriesToRemove);
     }
 
     public function testBundleNoConfig(): void
     {
-        $from = Resolver::makeAbsolute('fixtures/noconfig');
+        $from = Resolver::makeAbsolute('tests/fixtures/noconfig');
         $bundler = new Bundler([
             'rootpath' => $from,
             'loglevel' => 3,
         ]);
 
         $path = $bundler->bundle();
-        $this->assertEquals(Resolver::makeAbsolute('fixtures/noconfig/dist/bundle.zip'), $path);
+        $this->assertEquals(Resolver::makeAbsolute('tests/fixtures/noconfig/dist/bundle.zip'), $path);
         $this->assertTrue(is_dir($from . '/dist'));
         $this->assertTrue(is_file($from . '/dist/bundle.zip'));
         $this->remove($from . '/dist');
@@ -207,7 +165,7 @@ class BundlerTest extends TestCase
 
     public function testBundleConfigInComposer(): void
     {
-        $from = Resolver::makeAbsolute('fixtures/config');
+        $from = Resolver::makeAbsolute('tests/fixtures/config');
         $bundler = new Bundler([
             'rootpath' => $from,
             'loglevel' => 3,
@@ -227,10 +185,11 @@ class BundlerTest extends TestCase
 
     public function testBundlePhpScoper(): void
     {
-        $from = Resolver::makeAbsolute('fixtures/scoper');
+        $from = Resolver::makeAbsolute('tests/fixtures/scoper');
         $bundler = new Bundler([
             'rootpath' => $from,
-            'loglevel' => 3,
+            'log' => true,
+            'loglevel' => 7,
         ]);
 
         $bundler->bundle();
@@ -243,9 +202,9 @@ class BundlerTest extends TestCase
 
     public function testBundleScopingWithNoConfig(): void
     {
-        $from = Resolver::makeAbsolute('fixtures/noconfig');
+        $from = Resolver::makeAbsolute('tests/fixtures/noconfig');
         $bundler = new Bundler([
-            'phpscoper' => true,
+            'composer' => ['phpscoper' => true],
             'rootpath' => $from,
             'log' => false,
             'loglevel' => 5,

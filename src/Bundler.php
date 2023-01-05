@@ -31,17 +31,14 @@ class Bundler
       'basepath' => null,
       'rootpath' => null,
       'config' => [],
-      'gitignore' => true,
-      'wpignore' => true,
-      'wpinclude' => true,
-      'keep' => [
-        'dependencies' => true,
+      'include' => ['*'],
+      'exclude' => [],
+      'composer' => [
+        'install' => true,
         'dev-dependencies' => false,
+        'phpscoper' => false,
       ],
-      'include' => null,
-      'exclude' => null,
       'output' => 'dist',
-      'phpscoper' => false,
       'zip' => 'bundle',
     ];
 
@@ -82,7 +79,6 @@ class Bundler
      * - 2 : Error during composer install
      * - 3 : Error during dependencies scoping
      * - 4 : Error during zipping
-     * - 5 : Unable to load a configuration file
      *
      * @var int
      */
@@ -117,9 +113,8 @@ class Bundler
 
         $this->_logger = Logger::get($this->_config->getInt('loglevel'));
         $this->_fs = new FileSystem();
-        $this->_log(-1, 'WordpressBundler - Bundling starting');
-        $this->_log(-1, '------------------------------------');
-        $this->_loadConfig();
+        $this->_loadConfigFile('composer.json', 'extra.bundler', 'defaults');
+        $this->getConfig()->merge($config);
     }
 
     /**
@@ -131,6 +126,19 @@ class Bundler
     public function &getConfig(): Config
     {
         return $this->_config;
+    }
+
+    public function loadConfig($config, string $registry = 'overrides')
+    {
+        foreach ($config as $path => $key) {
+            if (is_string($path)) {
+                $this->_loadConfigFile($path, $key, $registry);
+            } else {
+                $this->_loadConfigFile($key, null, $registry);
+            }
+        }
+
+        return $this;
     }
 
     /**
@@ -147,7 +155,7 @@ class Bundler
             try {
                 $this->setRootPath($this->_config->getString('rootpath'));
             } catch (\TypeError $err) {
-                $this->setRootPath(Resolver::getRootPath());
+                $this->setRootPath();
             }
         }
 
@@ -163,13 +171,9 @@ class Bundler
      * @param string $path Path to use as root path
      * @return \Lqdt\WordpressBundler\Bundler
      */
-    public function setRootPath(string $path)
+    public function setRootPath(?string $path = null)
     {
-        if ($this->_fs->isAbsolutePath($path)) {
-            $this->_rootpath = $path;
-        } else {
-            $this->_rootpath = Resolver::makeAbsolute($path);
-        }
+        $this->_rootpath = Resolver::getRootPath($path);
 
         return $this;
     }
@@ -188,7 +192,7 @@ class Bundler
             try {
                 $this->setBasePath($this->_config->getString('basepath'));
             } catch (\TypeError $err) {
-                $this->setBasePath($this->getRootPath());
+                $this->setBasePath();
             }
         }
 
@@ -203,12 +207,10 @@ class Bundler
      * @param string|null $path Base path
      * @return \Lqdt\WordpressBundler\Bundler
      */
-    public function setBasePath(?string $path)
+    public function setBasePath(?string $path = null)
     {
         if ($path === null) {
             $this->_basepath = $this->getRootPath();
-        } elseif ($this->_fs->isAbsolutePath($path)) {
-            $this->_basepath = $path;
         } else {
             $this->_basepath = Resolver::makeAbsolute($path, $this->getRootPath());
         }
@@ -227,136 +229,43 @@ class Bundler
     }
 
     /**
-     * Returns the absolute path to composer.json file
+     * Returns the finder with resolved entries based on configuration
      *
-     * @return string
+     * @return \Lqdt\WordpressBundler\Finder
      */
-    public function getComposerPath(): string
-    {
-        return $this->getRootPath('composer.json');
-    }
-
-    /**
-     * Parse and fetch files to ignore from .gitignore
-     *
-     * If a list is provided, files will be appended to it
-     *
-     * @param string[] $exclude Exclude list
-     * @return string[]
-     */
-    public function parseGitIgnore(array $exclude = []): array
-    {
-        if (!$this->_config->getBoolean('gitignore')) {
-            $this->_log(6, 'Skipping .gitignore to exclude files');
-
-            return $exclude;
-        }
-
-        $this->_log(6, 'Parsing .gitignore and adding matching files to exclude list');
-
-        $gitignore = $this->getRootPath('.gitignore');
-        $excluded = $this->_getMatchesFromGitFile($gitignore);
-        $this->_log(5, sprintf('%s matching files added to exclude list', count($excluded)));
-        return $exclude + $excluded;
-    }
-
-    /**
-     * Parse and fetch files to ignore from .wpignore
-     *
-     * If a list is provided, files will be appended to it
-     *
-     * @param string[] $exclude Exclude list
-     * @return string[]
-     */
-    public function parseWpIgnore(array $exclude = []): array
-    {
-        if (!$this->_config->getBoolean('wpignore')) {
-            $this->_log(6, 'Skipping .wpignore to exclude files');
-
-            return $exclude;
-        }
-
-        $this->_log(6, 'Parsing .wpignore and adding matching files to exclude list');
-
-        $wpignore = $this->getRootPath('.wpignore');
-        $excluded = $this->_getMatchesFromGitFile($wpignore);
-        $this->_log(5, sprintf('%s matching files added to exclude list', count($excluded)));
-
-        return $exclude + $excluded;
-    }
-
-    /**
-     * Parse and fetch files to ignore from .wpignore
-     *
-     * If a list is provided, files will be appended to it
-     *
-     * @param string[] $include Include list
-     * @return string[]
-     */
-    public function parseWpInclude(array $include = []): array
-    {
-        if (!$this->_config->getBoolean('wpinclude')) {
-            $this->_log(6, 'Skipping .wpinclude to include files');
-
-            return $include;
-        }
-
-        $this->_log(6, 'Parsing .wpinclude and adding matching files to include list');
-
-        $wpinclude = $this->getRootPath('.wpinclude');
-        $included = $this->_getMatchesFromGitFile($wpinclude);
-        $this->_log(5, sprintf('%s matching files added to include list', count($included)));
-
-        return $include + $included;
-    }
-
-
-    /**
-     * Returns the entries to be copied based on configuration
-     *
-     * Returned entries will be split between files and folders keys
-     *
-     * @return array<string,string>
-     */
-    public function getEntries(): array
+    public function getFinder(): Finder
     {
         $this->_log(6, sprintf('Paths resolving starting'));
 
+        $finder = new Finder($this->getBasePath());
+
         try {
-            /** @var string[] $include */
-            $include = $this->_config->getArray('include');
-            // Add .wpinclude paths
-            $include = $this->parseWpInclude($include);
-        } catch (\TypeError $err) {
-            $include = $this->parseWpInclude();
-            $include = $include ?: ['*'];
+            $finder->includeFromFile($this->getRootPath('.wpinclude'));
+        } catch (\RuntimeException $err) {
+            $this->_log(7, 'No .wpinclude file found at root path');
         }
 
         try {
-            /** @var string[] $exclude */
-            $exclude = $this->_config->getArray('exclude');
+            $finder->includeMany($this->_config->getArray('include'));
         } catch (\TypeError $err) {
-            $exclude = [];
+            $this->_log(7, 'No include directives found in config files');
         }
 
-        $exclude = $this->parseGitIgnore($exclude);
-        $exclude = $this->parseWpIgnore($exclude);
-
-        $excluded = Resolver::resolveMany($exclude, $this->getBasePath());
-        $included = Resolver::resolveMany($include, $this->getBasePath());
-        $entries = [];
-
-        foreach ($included as $k => $entry) {
-            if (in_array($entry, $excluded)) {
-                continue;
-            }
-
-            $entries[$k] = $entry;
+        try {
+            $finder->excludeFromFile($this->getRootPath('.wpexclude'));
+        } catch (\RuntimeException $err) {
+            $this->_log(7, 'No .wpexclude file found at root path');
         }
 
-        $this->_log(5, sprintf('Paths resolving done : %d files found', count($entries)));
+        try {
+            $finder->excludeMany($this->_config->getArray('exclude'));
+        } catch (\TypeError $err) {
+            $this->_log(7, 'No exclude directives found in config files');
+        }
 
-        return $entries;
+        $this->_log(5, sprintf('Paths resolving done : %d entries found', count($finder->getEntries())));
+
+        return $finder;
     }
 
     /**
@@ -367,12 +276,12 @@ class Bundler
      */
     public function bundle(array $overrides = []): string
     {
-        if (!empty($overrides)) {
-            $this->_config->setOverrides($overrides);
-            $this->_loadConfig();
-        }
+        $this->getConfig()->merge($overrides, 'overrides');
 
-        $scoped = (bool)$this->_config->get('phpscoper');
+        $this->_log(-1, 'WordpressBundler - Bundling starting');
+        $this->_log(-1, '------------------------------------');
+
+        $scoped = (bool)$this->_config->get('composer.phpscoper');
         $zipped = (bool)$this->_config->get('zip');
         $useTmpFolder = $scoped || $zipped;
 
@@ -418,17 +327,27 @@ class Bundler
      */
     public function export(string $to): string
     {
-        $useComposer = $this->_config->getBoolean('keep.dependencies') ||
-            $this->_config->getBoolean('keep.dev-dependencies');
-        $entries = $this->getEntries();
-
         $this->_log(6, sprintf('Copy files'));
+        $this->_log(7, sprintf('Target directory is %s', $to));
+
+        $useComposer = $this->_config->getBoolean('composer.install');
+        $finder = $this->getFinder();
+        // Ensures that destination folder won't be in included entries
+        $finder->exclude($this->getConfig()->getString('output'));
+        $entries = $finder->getEntries();
+        $toRemove = $finder->getEntriesToRemove($to);
+        $copied = 0;
 
         foreach ($entries as $rpath => $fpath) {
             $tpath = Resolver::makeAbsolute($rpath, $to);
 
-            if (is_file($fpath)) {
+            if (is_dir($fpath)) {
+                $this->_fs->mirror($fpath, $tpath);
+                $copied++;
+                $this->_log(7, sprintf(' - %s', $rpath));
+            } elseif (is_file($fpath)) {
                 $this->_fs->copy($fpath, $tpath);
+                $copied++;
                 $this->_log(7, sprintf(' - %s', $rpath));
             } else {
                 $this->_result = 1;
@@ -436,7 +355,9 @@ class Bundler
             }
         }
 
-        $this->_log(5, sprintf('%s files copied', count($entries)));
+        // Clean excluded childs
+        $this->_fs->remove($toRemove);
+        $this->_log(5, sprintf('%s files and folders copied', $copied));
 
         if (!$useComposer) {
             $this->_log(6, sprintf('Skipping composer install as requested by configuration'));
@@ -454,13 +375,13 @@ class Bundler
 
         $this->_log(6, sprintf('Launching composer install'));
 
-        // Update composer.json based on config
-        $content = (array)json_decode(file_get_contents($composer) ?: "{}", true, 512, JSON_THROW_ON_ERROR);
-        $content = $this->_handleComposerDependencies($content);
-        file_put_contents($composer, json_encode($content, JSON_PRETTY_PRINT));
-
         // Run composer install in target folder
-        exec("composer install --no-progress --working-dir={$to} --classmap-authoritative --quiet", $output, $result);
+        // Use of install ensures that composer.lock will be used to deploy dependencies used versions
+        $cmd = "composer install --no-progress --working-dir={$to} --classmap-authoritative";
+        $cmd .= $this->getConfig()->getBoolean('composer.dev-dependencies') ? ' --dev' : ' --no-dev';
+        $cmd .= $this->getConfig()->getBoolean('debug') ? '' : ' --quiet';
+
+        $result = $this->_exec($cmd);
         if ($result > 0) {
             $this->_result = 2;
             $this->_log(3, sprintf('Unable to execute composer install'));
@@ -482,7 +403,7 @@ class Bundler
     {
         $this->_log(6, 'Start dependencies scoping');
 
-        $scoper = Resolver::makeAbsolute('vendor/bin/php-scoper');
+        $scoper = is_file('php-scoper') ? 'php-scoper' : Resolver::makeAbsolute('vendor/bin/php-scoper');
         $config = $this->getRootPath('scoper.inc.php');
 
         if (!is_file($scoper)) {
@@ -494,11 +415,8 @@ class Bundler
             return $from;
         }
 
-        exec(
-            "{$scoper} add-prefix {$from} -o {$to} -f -q" . (is_file($config) ? " -c {$config}" : " --no-config"),
-            $output,
-            $result
-        );
+        $cmd = "{$scoper} add-prefix {$from} -o {$to} -f -q" . (is_file($config) ? " -c {$config}" : " --no-config");
+        $result = $this->_exec($cmd);
 
         if ($result > 0) {
             $this->_result = 3;
@@ -507,11 +425,9 @@ class Bundler
             return $from;
         }
 
-        exec(
-            "composer dump-autoload --working-dir={$to} --classmap-authoritative --quiet",
-            $output,
-            $result
-        );
+        $cmd = "composer dump-autoload --working-dir={$to} --classmap-authoritative";
+        $cmd .= $this->getConfig()->getBoolean('debug') ? '' : ' --quiet';
+        $result = $this->_exec($cmd);
 
         if ($result > 0) {
             $this->_result = 3;
@@ -553,75 +469,32 @@ class Bundler
     }
 
     /**
-     * Processes a gitignore like file to filter allowed paths
+     * Executes a shell command and returns result code
      *
-     * @param string $path Path to file
-     * @return array<string>
-     */
-    protected function _getMatchesFromGitFile(string $path): array
-    {
-        $matches = [];
-        $basepath = $this->getBasePath();
-
-        if (!is_file($path)) {
-            $this->_log(4, sprintf('Missing expected file %s', $path));
-
-            return $matches;
-        }
-
-        $content = file_get_contents($path);
-
-        if ($content === false) {
-            $this->_log(4, sprintf('Unable to parse content of %s', $path));
-
-            return $matches;
-        }
-
-        /** @psalm-var \TOGoS_GitIgnore_Ruleset $ruleset */
-        $ruleset = \TOGoS_GitIgnore_Ruleset::loadFromString($content);
-        $finder = new \TOGoS_GitIgnore_FileFinder([
-            'ruleset' => $ruleset,
-            'invertRulesetResult' => false,
-            'includeDirectories' => true,
-            'defaultResult' => false,
-            'callback' => function (string $f, bool $result) use ($basepath, &$matches) {
-                if ($result === true) {
-                    /** @psalm-var string[] $matches */
-                    $matches[] = Resolver::makeAbsolute($f, $basepath);
-                }
-            },
-        ]);
-
-        $finder->findFiles($basepath);
-
-        /** @psalm-var string[] $matches */
-        return $matches;
-    }
-
-    /**
-     * Process composer.json content and updates dependencies and dev dependencies based on configuration
+     * If debug is enabled, the command output will be parsed if available
      *
-     * @param  array $content Composer.json content
-     * @return array          Updated content
+     * @param string $cmd Command to execute
+     * @return int
      */
-    protected function _handleComposerDependencies(array $content): array
+    protected function _exec(string $cmd): int
     {
-        if (!$this->_config->get('keep.dependencies')) {
-            unset($content['require']);
+        $debug = $this->getConfig()->getBoolean('debug');
+        exec($cmd, $output, $result);
+
+        if ($result > 0 && $debug && is_array($output)) {
+            foreach ($output as $line) {
+                $this->_log(7, $line);
+            }
         }
 
-        if (!$this->_config->get('keep.dev-dependencies')) {
-            unset($content['require-dev']);
-        }
-
-        return $content;
+        return $result;
     }
 
     /**
      * Handles creation and/or cleaning of a directory
      *
      * @param  string  $dir   Directory path
-     * @param  boolean $clean Clean flag
+     * @param  bool $clean Clean flag
      * @return string  Aboslute path to directory
      */
     protected function _handleDirectory(string $dir, bool $clean): string
@@ -638,59 +511,40 @@ class Bundler
         return $dir;
     }
 
-    /**
-     * Attempts to load root composer.json `extra.bundler` section and, if provided, additional configuration files
-     *
-     * @return \Lqdt\WordpressBundler\Bundler
-     */
-    protected function _loadConfig()
+    protected function _loadComposerConfig(): void
     {
-        $this->_log(6, 'Looking for configuration file(s)');
-        $loaded = [];
+        $config = $this->getConfig();
+        $this->_log(6, 'Loading configuration from composer.json');
 
         try {
-            $composer = $this->getComposerPath();
-            $this->_config->load($composer, 'extra.bundler');
-            $loaded[] = $composer . ':extra.bundler';
+            $composer = $this->$this->getRootPath('composer.json');
+            $config->load($composer, 'extra.bundler');
+            $this->_log(5, 'Configuration loaded from composer.json');
         } catch (\RuntimeException $err) {
             $this->_log(4, $err->getMessage());
         }
+    }
 
-        $files = $this->_config->getArray('config');
+    /**
+     * Loads a configuration file into config
+     *
+     * @param string $path Path to file
+     * @param string|null $key Key in file
+     * @param string $registry Targetted config registry
+     * @return void
+     */
+    protected function _loadConfigFile(string $path, ?string $key, string $registry): void
+    {
+        $this->_log(6, sprintf('Loading configuration from %s', $path));
+        $config = $this->getConfig();
+        $path = $this->getRootPath($path);
 
-        /** @psalm-suppress MixedAssignment */
-        foreach ($files as $path => $key) {
-            if (!is_string($path)) {
-                $this->_log(3, 'Unable to parse additional config file path (not a string)');
-
-                break;
-            }
-
-            if (!(is_string($key) || $key == null)) {
-                $this->_log(3, 'Unable to parse additional config file key (not a string or null');
-
-                break;
-            }
-
-            $path = Resolver::makeAbsolute($path, $this->getBasePath());
-
-            try {
-                /** @psalm-var null|string $key */
-                $this->_config->load($path, $key, 'overrides');
-                $loaded[] = "{$path}:{$key}";
-            } catch (\RuntimeException $err) {
-                $this->_result = 5;
-                $this->_log(3, $err->getMessage());
-            }
+        try {
+            $config->load($path, $key, $registry);
+            $this->_log(5, sprintf('Configuration loaded from %s', $path));
+        } catch (\RuntimeException $err) {
+            $this->_log(4, $err->getMessage());
         }
-
-        foreach ($loaded as $file) {
-            $this->_log(7, sprintf('Loaded configuration from %s', $file));
-        }
-
-        $this->_log(5, sprintf('Configuration files found : %d', count($loaded)));
-
-        return $this;
     }
 
     /**
@@ -736,7 +590,7 @@ class Bundler
 
         if ($logEnabled) {
             $this->_logger->log($priority, $message);
-            // ob_flush();
+            ob_flush();
         }
 
         if ($priority <= 3 && $this->_config->getBoolean('debug')) {

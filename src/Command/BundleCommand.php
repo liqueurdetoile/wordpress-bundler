@@ -58,13 +58,15 @@ class BundleCommand extends Command
      */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        /** @var array $config */
+        /** @var string[] $config */
         $config = $input->getOption('config');
-        $bundler = new Bundler(['log' => true]);
-        $bundler->bundle([
-            'config' => $config,
-        ]);
+        $bundler = new Bundler();
+        /** Enable logging as fallback */
+        $bundler->getConfig()->set('log', true, 'fallbacks');
+        /** Load additional config files */
+        $bundler->loadConfig($config);
 
+        $bundler->bundle();
         return $bundler->getResult();
     }
 }

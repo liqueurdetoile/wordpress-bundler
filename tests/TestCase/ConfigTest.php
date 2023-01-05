@@ -5,6 +5,7 @@ namespace Lqdt\WordpressBundler\Test\Testcase;
 
 use Adbar\Dot;
 use Lqdt\WordpressBundler\Config;
+use Lqdt\WordpressBundler\Exception\MissingKeyConfigException;
 use PHPUnit\Framework\TestCase;
 
 class ConfigTest extends TestCase
@@ -37,7 +38,17 @@ class ConfigTest extends TestCase
     public function testStaticRead(): void
     {
         $config = Config::read($this->config);
-        $this->assertSame(['bundler' => ['clean' => true]], $config->get());
+
+        $this->assertSame(['bundler' => ['clean' => true]], $config->all());
+
+        $this->expectException(\RuntimeException::class);
+        Config::read('datSillyPath');
+    }
+
+    public function testStaticReadRootComposer(): void
+    {
+        $config = Config::read();
+        $this->assertEquals('lqdt/wordpress-bundler', $config->get('name'));
 
         $this->expectException(\RuntimeException::class);
         Config::read('datSillyPath');
@@ -47,34 +58,34 @@ class ConfigTest extends TestCase
     {
         Config::write(['bundler' => ['clean' => false]], $this->config);
         $config = Config::read($this->config);
-        $this->assertSame(['bundler' => ['clean' => false]], $config->get());
+        $this->assertSame(['bundler' => ['clean' => false]], $config->all());
     }
 
     public function testStaticWriteWithDot(): void
     {
         Config::write(new Dot(['bundler' => ['clean' => false]]), $this->config);
         $config = Config::read($this->config);
-        $this->assertSame(['bundler' => ['clean' => false]], $config->get());
+        $this->assertSame(['bundler' => ['clean' => false]], $config->all());
     }
 
     public function testStaticWriteNoMerge(): void
     {
         Config::write(['bundler' => ['log' => 6]], $this->config);
         $config = Config::read($this->config);
-        $this->assertSame(['bundler' => ['log' => 6]], $config->get());
+        $this->assertSame(['bundler' => ['log' => 6]], $config->all());
     }
 
     public function testStaticWriteMerge(): void
     {
         Config::write(['bundler' => ['log' => 6]], $this->config, null, true);
         $config = Config::read($this->config);
-        $this->assertSame(['bundler' => ['clean' => true, 'log' => 6]], $config->get());
+        $this->assertSame(['bundler' => ['clean' => true, 'log' => 6]], $config->all());
     }
 
     public function testStaticReadByKey(): void
     {
         $config = Config::read($this->config, 'bundler');
-        $this->assertSame(['clean' => true], $config->get());
+        $this->assertSame(['clean' => true], $config->all());
 
         $this->expectException(\RuntimeException::class);
         Config::read('datSillyKey', $this->config);
@@ -84,27 +95,27 @@ class ConfigTest extends TestCase
     {
         Config::write(['clean' => false], $this->config, 'bundler');
         $config = Config::read($this->config);
-        $this->assertSame(['bundler' => ['clean' => false]], $config->get());
+        $this->assertSame(['bundler' => ['clean' => false]], $config->all());
     }
 
     public function testStaticWriteByKeyWithDot(): void
     {
         Config::write(new Dot(['clean' => false]), $this->config, 'bundler');
         $config = Config::read($this->config);
-        $this->assertSame(['bundler' => ['clean' => false]], $config->get());
+        $this->assertSame(['bundler' => ['clean' => false]], $config->all());
     }
 
     public function testStaticWriteByKeyWithDotAndMerge(): void
     {
         Config::write(new Dot(['log' => 6]), $this->config, 'bundler', true);
         $config = Config::read($this->config);
-        $this->assertSame(['bundler' => ['clean' => true, 'log' => 6]], $config->get());
+        $this->assertSame(['bundler' => ['clean' => true, 'log' => 6]], $config->all());
     }
 
     public function testInstanceRead(): void
     {
         $config = Config::getInstance()->load($this->config);
-        $this->assertSame(['bundler' => ['clean' => true]], $config->get());
+        $this->assertSame(['bundler' => ['clean' => true]], $config->all());
 
         $this->expectException(\RuntimeException::class);
         Config::getInstance()->load('datSillyPath');
@@ -118,7 +129,7 @@ class ConfigTest extends TestCase
           ->save();
 
         $config = Config::read($this->config);
-        $this->assertSame(['bundler' => ['clean' => false]], $config->get());
+        $this->assertSame(['bundler' => ['clean' => false]], $config->all());
 
         $instance->getOverrides()->set('bundler.clean', true);
     }
@@ -126,7 +137,7 @@ class ConfigTest extends TestCase
     public function testInstanceReadByKey(): void
     {
         $config = Config::getInstance()->load($this->config, 'bundler');
-        $this->assertSame(['clean' => true], $config->get());
+        $this->assertSame(['clean' => true], $config->all());
 
         $this->expectException(\RuntimeException::class);
         Config::getInstance()->load('datSillyKey', $this->config);
@@ -140,7 +151,7 @@ class ConfigTest extends TestCase
           ->save();
 
         $config = Config::read($this->config);
-        $this->assertSame(['bundler' => ['clean' => false]], $config->get());
+        $this->assertSame(['bundler' => ['clean' => false]], $config->all());
     }
 
     public function testInstanceWriteToAnotherKey(): void
@@ -156,13 +167,23 @@ class ConfigTest extends TestCase
         ], $config->all());
     }
 
-    public function testGetMissing(): void
+    public function testGetMissingAndFallback(): void
     {
-        $this->expectException(\RuntimeException::class);
+        $this->assertEquals(
+            'fallback',
+            Config::getInstance()
+            ->load($this->config)
+            ->get('bundler.missing', 'fallback')
+        );
+    }
+
+    public function testGetMissingAndThrow(): void
+    {
+        $this->expectException(MissingKeyConfigException::class);
 
         Config::getInstance()
             ->load($this->config)
-            ->get('bundler.missing');
+            ->getOrFail('bundler.missing');
     }
 
     public function testGetBoolean(): void
@@ -207,7 +228,55 @@ class ConfigTest extends TestCase
           ->delete('bundler.clean');
 
         $this->assertEquals('bundle', $config->get('bundler.zip'));
-        $this->expectException(\RuntimeException::class);
-        $config->get('bundler.clean');
+        $this->expectException(MissingKeyConfigException::class);
+        $config->getOrFail('bundler.clean');
+    }
+
+    public function testArrayCascade(): void
+    {
+        $config = new Config();
+
+        $config->setFallbacks(['include' => ['*']]);
+        $this->assertSame(['*'], $config->get('include'));
+
+        $config->set('include', []);
+        $this->assertSame(['*'], $config->get('include'));
+
+        $config->set('include', null);
+        $this->assertSame(null, $config->get('include'));
+
+        $config->set('include', ['item']);
+        $this->assertSame(['item'], $config->get('include'));
+
+        $config->set('include', ['plus'], 'overrides');
+        $this->assertSame(['plus'], $config->get('include'));
+    }
+
+    public function testMerge()
+    {
+        $config = new Config();
+
+        $config->setDefaults([
+            'clean' => true,
+            'bundle' => 'test',
+            'include' => [
+                '*',
+            ],
+        ]);
+
+        $config->merge([
+            'clean' => false,
+            'include' => [
+                'test.php',
+            ],
+        ]);
+
+        $this->assertSame([
+            'clean' => false,
+            'bundle' => 'test',
+            'include' => [
+                'test.php',
+            ],
+        ], $config->all());
     }
 }
