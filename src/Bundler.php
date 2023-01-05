@@ -590,7 +590,7 @@ class Bundler
 
         if ($logEnabled) {
             $this->_logger->log($priority, $message);
-            ob_flush();
+            // ob_flush();
         }
 
         if ($priority <= 3 && $this->_config->getBoolean('debug')) {
