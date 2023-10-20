@@ -60,7 +60,7 @@ jobs:
           elif ${{ matrix.php-version == '7.4' }}; then
             composer update --with-all-dependencies
           else
-            composer update
+            composer update --with-all-dependencies
           fi
 
       - name: Run PHPUnit (No coverage)
@@ -77,13 +77,13 @@ jobs:
           COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run PHP CodeSniffer
-        if: ${{ matrix.php-version == '7.4' && matrix.coverage == 'no-coverage'}}
+        if: ${{ matrix.php-version == '8.2'}}
         run: vendor/bin/phpcs --report=checkstyle src/ tests/TestCase | cs2pr
 
       - name: Run PHPstan
-        if: ${{ matrix.php-version == '7.4' && matrix.coverage == 'no-coverage'}}
+        if: ${{ matrix.php-version == '8.2'}}
         run: vendor/bin/phpstan analyze --memory-limit 1G --error-format=github
 
       - name: Run Psalm
-        if: ${{ matrix.php-version == '7.4' && matrix.coverage == 'no-coverage'}}
+        if: ${{ matrix.php-version == '8.2'}}
         run: vendor/bin/psalm
