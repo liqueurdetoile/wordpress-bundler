@@ -59,6 +59,7 @@ jobs:
             composer update --ignore-platform-req=php
           else
             composer update
+          fi
 
       - name: Run PHPUnit (No coverage)
         if: matrix.coverage == 'no-coverage'
