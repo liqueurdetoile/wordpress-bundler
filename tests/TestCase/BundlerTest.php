@@ -168,7 +168,7 @@ class BundlerTest extends TestCase
         ]))->setConfig($config);
 
         $entries = $bundler->getEntries();
-        $this->assertSame($expected, array_keys($entries));
+        $this->assertEqualsCanonicalizing($expected, array_keys($entries));
     }
 
     public function testGetEntriesWithWpIgnore(): void
@@ -180,7 +180,7 @@ class BundlerTest extends TestCase
 
         $entries = $bundler->getEntries();
 
-        $this->assertSame([
+        $this->assertEqualsCanonicalizing([
             "assets",
             "composer.json",
             "inc",
