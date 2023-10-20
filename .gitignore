@@ -1,5 +1,5 @@
+composer.lock
 .phpunit.result.cache
 vendor
 dist
 build
-.wpignore
