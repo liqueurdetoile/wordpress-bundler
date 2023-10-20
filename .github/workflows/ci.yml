@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch: {}
   push:
     branches:
       - "1.x-next"
@@ -17,10 +18,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php-version: ["8.0", "8.1", "8.2"]
+        php-version: ["7.4", "8.1"]
         coverage: ["no-coverage"]
         include:
-          - php-version: "7.4"
+          - php-version: "8.2"
             coverage: "pcov"
 
     env:
@@ -50,7 +51,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ${{ steps.composer-cache.outputs.dir }}
-          key: ${{ runner.os }}-composer-${{ steps.key-date.outputs.date }}-${{ hashFiles('composer.json') }}
+          key: ${{ runner.os }}-composer-${{ steps.key-date.outputs.date }}-${{ hashFiles('composer.json') }}-${{ matrix.php-version }}
 
       - name: Composer install
         run: |
@@ -74,13 +75,13 @@ jobs:
           COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run PHP CodeSniffer
-        if: ${{ matrix.php-version == '7.4' && matrix.coverage == 'no-coverage'}}
+        if: ${{ matrix.php-version == '8.2'}}
         run: vendor/bin/phpcs --report=checkstyle src/ tests/TestCase | cs2pr
 
       - name: Run PHPstan
-        if: ${{ matrix.php-version == '7.4' && matrix.coverage == 'no-coverage'}}
+        if: ${{ matrix.php-version == '8.2'}}
         run: vendor/bin/phpstan analyze --memory-limit 1G --error-format=github
 
       - name: Run Psalm
-        if: ${{ matrix.php-version == '7.4' && matrix.coverage == 'no-coverage'}}
+        if: ${{ matrix.php-version == '8.2'}}
         run: vendor/bin/psalm

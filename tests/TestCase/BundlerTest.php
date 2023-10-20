@@ -96,22 +96,22 @@ class BundlerTest extends TestCase
         return [
             [
                 [
-                    "assets" => "F:/Projets/wordpress/tools/toolkit/tests/fixtures/noconfig/assets",
-                    "composer.json" => "F:/Projets/wordpress/tools/toolkit/tests/fixtures/noconfig/composer.json",
-                    "inc" => "F:/Projets/wordpress/tools/toolkit/tests/fixtures/noconfig/inc",
-                    "nottobeseen.php" => "F:/Projets/wordpress/tools/toolkit/tests/fixtures/noconfig/nottobeseen.php",
-                    "plugin.php" => "F:/Projets/wordpress/tools/toolkit/tests/fixtures/noconfig/plugin.php",
+                    "assets",
+                    "composer.json",
+                    "inc",
+                    "nottobeseen.php",
+                    "plugin.php",
                 ],
             ],
             [
                 [
-                    'assets/index.css' => 'F:/Projets/wordpress/tools/toolkit/tests/fixtures/noconfig/assets/index.css',
-                    'assets/script.js' => 'F:/Projets/wordpress/tools/toolkit/tests/fixtures/noconfig/assets/script.js',
-                    "composer.json" => "F:/Projets/wordpress/tools/toolkit/tests/fixtures/noconfig/composer.json",
-                    'inc/class-test.php' => 'F:/Projets/wordpress/tools/toolkit/tests/fixtures/noconfig/inc/class-test.php',
-                    'inc/sub' => 'F:/Projets/wordpress/tools/toolkit/tests/fixtures/noconfig/inc/sub',
-                    "nottobeseen.php" => "F:/Projets/wordpress/tools/toolkit/tests/fixtures/noconfig/nottobeseen.php",
-                    "plugin.php" => "F:/Projets/wordpress/tools/toolkit/tests/fixtures/noconfig/plugin.php",
+                    'assets/index.css',
+                    'assets/script.js',
+                    'composer.json',
+                    'inc/class-test.php',
+                    'inc/sub',
+                    "nottobeseen.php",
+                    "plugin.php",
                 ], [
                     'finder' => [
                         'depth' => '< 2',
@@ -120,11 +120,11 @@ class BundlerTest extends TestCase
             ],
             [
                 [
-                    "assets" => "F:/Projets/wordpress/tools/toolkit/tests/fixtures/noconfig/assets",
-                    "composer.json" => "F:/Projets/wordpress/tools/toolkit/tests/fixtures/noconfig/composer.json",
-                    "inc" => "F:/Projets/wordpress/tools/toolkit/tests/fixtures/noconfig/inc",
-                    "nottobeseen.php" => "F:/Projets/wordpress/tools/toolkit/tests/fixtures/noconfig/nottobeseen.php",
-                    "plugin.php" => "F:/Projets/wordpress/tools/toolkit/tests/fixtures/noconfig/plugin.php",
+                    "assets",
+                    "composer.json",
+                    "inc",
+                    "nottobeseen.php",
+                    "plugin.php",
                 ], [
                     'finder' => [
                         'exclude' => [],
@@ -133,9 +133,9 @@ class BundlerTest extends TestCase
             ],
             [
                 [
-                    "assets" => "F:/Projets/wordpress/tools/toolkit/tests/fixtures/noconfig/assets",
-                    "composer.json" => "F:/Projets/wordpress/tools/toolkit/tests/fixtures/noconfig/composer.json",
-                    "inc" => "F:/Projets/wordpress/tools/toolkit/tests/fixtures/noconfig/inc",
+                    "assets",
+                    "composer.json",
+                    "inc",
                 ], [
                     'finder' => [
                         'exclude' => ['*.php'],
@@ -144,9 +144,9 @@ class BundlerTest extends TestCase
             ],
             [
                 [
-                    'assets/index.css' => 'F:/Projets/wordpress/tools/toolkit/tests/fixtures/noconfig/assets/index.css',
-                    'assets/script.js' => 'F:/Projets/wordpress/tools/toolkit/tests/fixtures/noconfig/assets/script.js',
-                    "composer.json" => "F:/Projets/wordpress/tools/toolkit/tests/fixtures/noconfig/composer.json",
+                    'assets/index.css',
+                    'assets/script.js',
+                    "composer.json",
                 ], [
                     'finder' => [
                         'exclude' => ['*.php'],
@@ -168,8 +168,7 @@ class BundlerTest extends TestCase
         ]))->setConfig($config);
 
         $entries = $bundler->getEntries();
-
-        $this->assertSame($expected, $entries);
+        $this->assertEqualsCanonicalizing($expected, array_keys($entries));
     }
 
     public function testGetEntriesWithWpIgnore(): void
@@ -181,12 +180,12 @@ class BundlerTest extends TestCase
 
         $entries = $bundler->getEntries();
 
-        $this->assertSame([
-            "assets" => "F:/Projets/wordpress/tools/toolkit/tests/fixtures/wpignore/assets",
-            "composer.json" => "F:/Projets/wordpress/tools/toolkit/tests/fixtures/wpignore/composer.json",
-            "inc" => "F:/Projets/wordpress/tools/toolkit/tests/fixtures/wpignore/inc",
-            "plugin.php" => "F:/Projets/wordpress/tools/toolkit/tests/fixtures/wpignore/plugin.php",
-        ], $entries);
+        $this->assertEqualsCanonicalizing([
+            "assets",
+            "composer.json",
+            "inc",
+            "plugin.php",
+        ], array_keys($entries));
     }
 
     public function testCopy(): void
@@ -202,7 +201,7 @@ class BundlerTest extends TestCase
         $results = $bundler->copy($entries, $to);
 
         $this->assertSame([
-            "to" => "F:/Projets/wordpress/tools/toolkit/tests/fixtures/noconfig/dist",
+            "to" => Path::makeAbsolute($to, $bundler->getBasePath()),
             "dirs" => 2,
             "files" => 3,
             "failures" => 1,

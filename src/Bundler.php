@@ -525,7 +525,7 @@ class Bundler
         $this->_log(6, $hasConfig ?
             sprintf('Loading %s configuration file for PHP-Scoper configuration', $config) :
             'No configuration file found. Reverting to default config');
-        $cmd = "{$scoper} add-prefix {$from} -o {$to} -f -q" . (is_file($config) ? " -c {$config}" : " --no-config");
+        $cmd = "{$scoper} add-prefix -o {$to} -q -f " . (is_file($config) ? "-c {$config} " : "--no-config ") . $from;
         $result = $this->_exec($cmd);
 
         if ($result > 0) {
