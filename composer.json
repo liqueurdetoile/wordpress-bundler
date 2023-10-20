@@ -2,7 +2,6 @@
   "name": "liqueurdetoile/wordpress-bundler",
   "description": "Wordpress bundler fully automates production release for wordpress plugins and themes and brings convenient tools to configure them",
   "type": "library",
-  "version": "1.0.0",
   "license": "GPL-3.0-or-later",
   "authors": [
     {
