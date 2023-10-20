@@ -1,25 +1,29 @@
 # WordpressBundler
 
+<center>
+
+[![Liqueur de Toile](https://hosting.liqueurdetoile.com/logo_lqdt.png "Liqueur de Toile website")](https://liqueurdetoile.com)
+
+</center>
+
 WordpressBundler is a wordpress project bundler written in PHP that produces clean production output. With WordpressBundler, you can easily keep all your PHP and JS code in a single repository, do your dev and, finally, creates a clean bundle that only embeds needed things for production.
 
 - [WordpressBundler](#wordpressbundler)
   - [Why WordpressBundler ?](#why-wordpressbundler-)
   - [Install the bundler](#install-the-bundler)
-  - [How bundling works ?](#how-bundling-works-)
-  - [Running bundler](#running-bundler)
+  - [Running the bundler](#running-the-bundler)
     - [As a shell](#as-a-shell)
     - [Programmatically](#programmatically)
+  - [Configuring bundler](#configuring-bundler)
+    - [Configuration files](#configuration-files)
+    - [Programmatic config](#programmatic-config)
   - [Bundler settings](#bundler-settings)
-  - [How to configure the bundler](#how-to-configure-the-bundler)
-    - [Understanding bundler configuration priorities](#understanding-bundler-configuration-priorities)
-    - [Through `composer.json`](#through-composerjson)
-    - [Through additional json config files](#through-additional-json-config-files)
-    - [Programmatically when creating and calling bundler](#programmatically-when-creating-and-calling-bundler)
-  - [Understand root path and base path](#understand-root-path-and-base-path)
-  - [Handling included and excluded files and/or folders](#handling-included-and-excluded-files-andor-folders)
-    - [Include paths](#include-paths)
-    - [Exclude paths](#exclude-paths)
-    - [A note on overriding include and exclude options](#a-note-on-overriding-include-and-exclude-options)
+    - [Logging](#logging)
+    - [Base path](#base-path)
+    - [Finder](#finder)
+    - [Composer](#composer)
+    - [PHP-Scoper](#php-scoper)
+    - [Output and temporary folders](#output-and-temporary-folders)
   - [Speeding up bundling](#speeding-up-bundling)
   - [Contributing or reporting bugs](#contributing-or-reporting-bugs)
   - [Changelog](#changelog)
@@ -40,25 +44,22 @@ Similarly to JS bundlers (like webpack), this tool takes care of the generation 
 ## Install the bundler
 
 ```bash
-composer require lqdt/wordpress-bundler --dev
+composer require liqueurdetoile/wordpress-bundler --dev
 ```
 
-## How bundling works ?
+## Running the bundler
 
-Based on its configuration, the bundler will resolve files and folders that should be included in the final bundle. There's a special care for PHP dependencies as you'll often want to have them in your final bundle. In that case, we heavily recommend to use php-scoper to avoid package versions issues when deployed in production alongside other themes and plugins.
+With its default configuration the bundler will :
 
-The goal of this library is to be compatible with any dev setup. However, the bundler is perfectly unaware of the organization and the state of your project.
+- Use the root of the project as base path
+- Include all files and folders in your project root folder except VCS folders and those already excluded by VCS (Git, Mercurial...)
+- Export these files as a zip archive to the `/dist` folder
 
-## Running bundler
+If you only need to exclude some files or folders, simply create a `.wpignore` file at the root of your project and add to it the patterns to exclude. The syntax is exactly the same than a `.gitignore` file.
 
-Without any further configuration the bundler will :
+This default configuration is well fitted for projects that does not require any dependencies in bundle nor relies on composer autoloader for internal purposes.
 
-- Use the root of your project as own root path and base path
-- Include all files and folders in your project except those excluded by .gitignore
-- Keep only production dependencies and install them
-- Export the bundle as a zip archive to the `/dist` folder
-
-If you only need to exclude some fields or folders, simply create a `.wpignore` file at the root of your project and add the patterns to exclude. The syntax is exactly the same than a `.gitignore` file. For more advanced include/exclude setup, see [handling included and excluded files and folders](#handling-included-and-excluded-files-andor-folders).
+> **Please read about bundler configuration just below for detailed configuration settings**
 
 ### As a shell
 
@@ -66,138 +67,142 @@ If you only need to exclude some fields or folders, simply create a `.wpignore` 
 vendor/bin/wpbundler bundle
 ```
 
+There's a few options available :
+
+- `--config <file>` or `-c <file>` : Requests loading of additional configuration stored in a file. You can load multiple configurations in this way.
+- `--log <1-7>` or `-l <1-7>` : Overrides bundler logging configuration and enable log with the given level.
+- `--dry` : Requests a dry run
+- `--show-entries-only` : Bundler will output entries that will be bundled based on its configuration
+
 ### Programmatically
 
 Simply create an instance of `\Lqdt\WordpressBundler\Bundler` and call its `bundle` method. See below how to customize configuration.
+
+## Configuring bundler
+
+### Configuration files
+
+The easiest way to tweak bundler configuration est to set up a configuration file. As default the bundler will always look first into `extra.wpbundler` key in project `composer.json` to fetch custom configuration. Alternatively, you can create an external file to store settings and calls it with `--config` option of the command line or, if used programmatically, with `Bundler::loadConfigFile` method.
+
+To ensure config integrity, additional configuration is always **merged** with current one. Therefore, only updated keys of settings have to be provided.
+
+To ease process of creating donfiguration file You can initialize a default config to be tweaked with this command :
+
+```bash
+# Generates config at extra.wpbundler key in project composer.json
+vendor/bin/wpbundler init
+
+# Generates an external file
+vendor/bin/wpbundler init -t bundler.config.php
+
+# Generates an external file and will stores config at bundler key in that file
+vendor/bin/wpbundler init -t config.json -k bundler
+```
+
+Config file language is inferred from its extension and can be any of PHP (.php), JSON (.json), XML (.xml), INI, (.ini) or YAML (.yml). YAML requires PECL module `yaml` to be loaded.
+
+### Programmatic config
+
+You can simply provide a custom configuration to bundler constructor or use `Bundler::setConfig`. Current configuration can be rerieved through `Bundler::getConfig` method.
 
 ## Bundler settings
 
 Available options for configuration with their default values are as following :
 
-```json
-{
-  "log": false,
-  "loglevel": 5,
-  "debug": false,
-  "clean": true,
-  "basepath": null,
-  "rootpath": null,
-  "include": null,
-  "exclude": null,
-  "composer": {
-    "install": true,
-    "dev-dependencies": false,
-    "phpscoper": false
-  },
-  "output": "dist",  
-  "zip": "bundle"
-}
-```
-
-The bundler will always try to load the `extra.bundler` section of project `composer.json` in order to update this starting configuration.
-
-Option  | Value type  | Description
---|:---:|--
-`log`  | `boolean`  | Enable/disable logging to console. When running from command line, this settings will always be turned to `true`.
-`loglevel`  | `integer`  | Configure logging level during bundling. See [Laminas docs for more details](https://docs.laminas.dev/laminas-log/intro/#using-built-in-priorities).
-`clean`  | `boolean`  | If set to `true`, the content of the output folder will be removed when starting bundling.
-`debug`  | `boolean`  | If set to `true`, the bundling will be aborted as soon as an error will be encoutered.
-`basepath`| `string \| null` | If empty, the base path will be set to the root path (usually project root). If needed, you can provide a different path that will be used by the resolver to find and output files. This value can be an absolute path or relative to root path. Please note that resolving path for `composer.json`, `.gitignore`, `.wpignore` and `.wpinclude` will still be done from root path and will ignore `basepath` value.
-`rootpath`| `string \| null` | If empty, the root path will be set to the root folder of your project where lives its `composer.json`. You will have to provide a valid absolute path to the root folder of your project if using a global installation of WordpressBundler. If a relative path is provided, it will be resolved from project root. Obviously, use cases are very rare.
-`composer.install` | `boolean` | If set to `true`, package and dependencies will be installed in bundle. You must ensure that a valid composer.json is at the root of the output folder. We highly recommend to apply scoping if using external dependencies.
-`composer.dev-dependencies` | `boolean` | If set to `true`, dev dependencies will be installed in bundle. You must ensure that a valid composer.json is at the root of the output folder. It's obviously not recommended at all as dev dependencies should not be commited to production bundles.
-`composer.phpscoper`  | `boolean`  | If set to `true`, the production dependencies will be scoped with a random prefix to avoid conflicts. If you need more granular control, see in [`humbug/php-scoper`](https://github.com/humbug/php-scoper/blob/main/docs/configuration.md#configuration) documentation on how to create a config file. Only `scoper.inc.php` at project root will be used.
-`include`  | `null \| array<path_to_folder \| path_to_file \| glob_pattern>` | List of files/folders or glob patterns to be included. Path can be relative to `basepath` or absolute. If empty, all files and folders available from `basepath` will be included after being filtered with `gitignore`, `wpignore` and `exclude` options. [See below for more informations](#handling-included-and-excluded-files-andor-folders).
-`exclude`  | `null \| array<path_to_folder \| path_to_file \| glob_pattern>` | List of files/folders or glob patterns to be included. Path can be relative to `basepath` or absolute
-`output`  | `string`  | Path to output folder relative to `basepath` or absolute. If folder doesn't exist, it will be created.
-`zip`  | `false|string`  | If set to `false`, bundled files are only copied in output folder. If set to a `string`, a zip archive is created and placed in output folder.
-
-## How to configure the bundler
-
-### Understanding bundler configuration priorities
-
-The configuration logic embedded with a bundler is based on three layers of priority : low (fallbacks), mid (defaults) and high (overrides). Fallback values are always set up [as described above](#bundler-settings).
-
-### Through `composer.json`
-
-A newly created bundler instance will always try to load the `extra.bundler` section that may exist in `composer.json` located at [root path](#understand-root-path-and-base-path). These settings will be loaded with a **mid** priority in configuration.
-
-### Through additional json config files
-
-Through command line you can load one or more additional configuration files with the `--config`/`-c` option. The path of these files can be absolute or relative to [root path](#understand-root-path-and-base-path). The settings will be loaded with a **high** priority in configuration. This can be useful to avoid changing file each time when testing. For instance :
-
-```bash
-bin/wpbundler bundle -c no-dependencies.json -c whatevermore.json
-```
-
-Additional files will be loaded from the first to the last one.
-
-### Programmatically when creating and calling bundler
-
-When called programmatically, and array of settings can be provided to the constructor of the bundler. This settings will be loaded with a **mid** priority in configuration and replace options of `composer.json` in case of conflict.
-
-You can also provide an array of settings when calling bundle. They will be loaded with a **high** priority in configuration and overrides options from config files in case of conflicts.
-
-Finally, you may load your own json config files with `Bundler::loadConfig` method.
-
 ```php
-use Lqdt\WordpressBundler\Bundler;
-
-$bundler = new Bundler(['loglevel' => 1]); // This will take over low default value of 5 
-$bundler->bundle(['loglevel' => 7]); // This will take over previous settings
-
-$bundler->getConfig(); // Returns the inner Config instance of the bundler
-$bundler->getConfig()->all(); // Returns the current merged configuration of the bundler
+[
+    'log' => true,
+    'loglevel' => 5,
+    'basepath' => null,
+    'finder' => [
+        'exclude' => [],
+        'depth' => 0,
+        'ignoreDotFiles' => true,
+        'ignoreVCS' => true,
+        'ignoreVCSIgnored' => true,
+    ],
+    'composer' => [
+        'install' => false,
+        'dev-dependencies' => false,
+        'phpscoper' => false,
+    ],
+    'tmpdir' => null,
+    'output' => 'dist',
+    'clean' => true,
+    'zip' => 'bundle.zip',
+];
 ```
 
-## Understand root path and base path
+### Logging
 
-The bundler **root path** must always be the root folder of your project unless you know what you're doing. If this package is installed as a dev-dependency of your project, the root path will be automatically found and there's no more to do.
+The bundler can outputs logs to console based on its parameters. It relies on `laminas/laminas-log` package.
 
-However, you may want to install this package globally. In that case, you need to provide the root path in the configuration of each of your project. You must also ensure that your global composer `bin` folder can be found in your PATH environment var.
+If `log` option is set to false, no log will be outputted at all. `loglevel` option is following BSD syslog protocol and expects `int` values between 0 to 7. See [Laminas log](https://docs.laminas.dev/laminas-log/intro/#using-built-in-priorities) for more informations.
 
-**`composer.json`, `.gitignore`, `.wpinclude`, `.wpignore` and `scoper.inc.php` if used will always be searched in the root path**.
+> **NOTE** : You can access and change bundler logger instance programmatically through `Bundler::getLogger` and `Bundler::setLogger` methods.
 
-The **base path** (relative to root path or absolute) is used to resolve relative paths to be included or excluded and the `ouput` option if relative.
+### Base path
 
-## Handling included and excluded files and/or folders
+Base path is used by the bundler to resolve any relative path stored in settings. Bundler base path is automatically set to current project root folder that will fit most of use cases.
 
-There's few rules not to forget :
+If needed, you can specify a different base path for the bundler. If a relative path is provided, it will be resolved from project root folder.
 
-1. If no path to include have been provided, the bundler will assume that **all files and folders located at base path** should be included
-2. Exclude list has **always** a greater priority than include list for the same path
-3. You can include targetted paths that are nested in an excluded one
-4. You can exclude targetted paths that are nested in an included one
+### Finder
 
-Instead of recursing all files in project, the bundler will limit itself to handle folders given its directives. There's a huge gap of speed improvement here as excluding `node_modules` or `vendor` folder doesn't imply to explore all files tree.
+The bundler embeds `symfony/finder` package to analyze filesystem and extract entries to be bundled. With default settings, all files and folders located in bundler base path will be integrated into the bundle, except VCS own and ignored files and folders.
 
-You can use a starting `#` to add comments to your pattern files.
+Available settings under `finder`settings key are :
 
-### Include paths
+- `exclude` : You can provide here some patterns to be excluded. They will be used to add [`notName`](https://symfony.com/doc/current/components/finder.html#file-name) and [`notPath`](https://symfony.com/doc/current/components/finder.html#path) constraints to the finder
+- `depth` : [See Finder component documentation](https://symfony.com/doc/current/components/finder.html#directory-depth). To disable depth setting, simply pass `-1` as value.
+- `ignoreDotFiles` : [See Finder component documentation](https://symfony.com/doc/current/components/finder.html#version-control-files)
+- `ignoreVCS` : [See Finder component documentation](https://symfony.com/doc/current/components/finder.html#version-control-files)
+- `ignoreVCSIgnored` : [See Finder component documentation](https://symfony.com/doc/current/components/finder.html#version-control-files)
 
-You can either use a `.wpinclude` file located at project root and/or provide an `include` option. Each line/entry will be processed as a pattern that may be a valid absolute path, a valid relative path (it will be resolved from `basepath` option) or a valid [PHP `glob`](https://www.php.net/manual/en/function.glob.php) pattern.
+**I deliberately limit depth to 0 in order to speed up things as copying a whole folder is way more quicker than copying each of its files and subfolders.** See [Speeding up bundling](#speeding-up-bundling) for more informations.
 
-### Exclude paths
+The actual options can handle 99% of needs but there's some limitations as Finder Component cannot exclude files based on path for instance. Please refer to [component own documentation](https://symfony.com/doc/current/components/finder.html#usage) for more details.
 
-You can either use a `.wpexclude` file located at project root and/or provide an `exclude` option. Each line/entry will be processed as a pattern that may be a valid absolute path, a valid relative path (it will be resolved from `basepath` option) or a valid [PHP `glob`](https://www.php.net/manual/en/function.glob.php) pattern.
+> **NOTE** : You can access and change bundler finder instance programmatically through `Bundler::getFinder` and `Bundler::setFinder` methods.
 
-### A note on overriding include and exclude options
+### Composer
 
-When using `include` or `exclude` options and willing to override their content from configuration ([see configuration priorities](#understanding-bundler-configuration-priorities)), keep in mind that only the array of the highest priority layer will be retained, except if the array is empty. If you want to cancel previous `include` or `exclude` setting, you must pass `null` as value.
+You can tell bundler to perform a clean install before bundling to embeds dependencies in final bundle and allow use of Composer autoloader. If you're using external dependencies, it is recommended to also use [PHP-Scoper](#php-scoper) to avoid conflicts of package versions between plugins or themes in a wordpress deployment.
+
+Available settings under `composer` settings key are :
+
+- `install` : If `true`, bundler will run `composer install` in exported bundle.
+- `dev-dependencies` : If `true`, bundler will also includes dev dependencies in exported bundle.
+- `phpscoper` : See [next section](#php-scoper)
+
+### PHP-Scoper
+
+The package [`humbug/php-scoper`](https://github.com/humbug/php-scoper) provides a convenient way to avoid conflicts of package versions between plugins or themes in a wordpress deployment. It will update all namespaces and bundler will take care of updating autoloader.
+
+If you want to use a custom configuration you can create a [`scoper.inc.php`](https://github.com/humbug/php-scoper/blob/main/docs/configuration.md#configuration) file in bundler base path that will be automatically loaded.
+
+### Output and temporary folders
+
+Available settings are :
+
+- `tmpdir` : As default, the bundler use `sys_get_temp_dir` built-in PHP function to locate a root folde for its own temporary folders. You can alternatively provide an **absolute** path to another folder
+- `output` : Path to bundle output folder. If relative, it will be resolved from bundler base path
+- `clean` : If `true`, output folder will be emptied at each bundle start
+- `zip` : If `true`, all bundle entries are gathered in a single ZIP archive named from this option. Extension in name optional.
 
 ## Speeding up bundling
 
 There's a few things you can do to improve the bundling speed :
 
-1. Keep your files well structured in order to handle filtering paths at root level only
-2. If you're not using composer autoloader, disable the install step by setting `composer.install` to `false`
+1. Keep your files well structured in order to handle filtering patterns at root level only. Copying whole folders are **way more faster** than processing each nested files
+2. If you're not using composer autoloader, check that install step is disabled by setting `composer.install` to `false` and filter out any composer/dev files and folders
 3. If you're only using your own package and namespace and ensuring it won't conflict with others (with vendor prefix for instance), there's no need to use `php-scoper`
 
 ## Contributing or reporting bugs
 
 WordpressBundler is welcoming any contribution and related PRs. Pleasy follow the contributing guidelines to do so.
 
-Any bug or suggestion should be made in the issues tracker.
+Any bug or suggestion should be made in this repository issues tracker.
 
 ## Changelog
 
@@ -205,11 +210,6 @@ Any bug or suggestion should be made in the issues tracker.
 
 ## What's next ?
 
-There's many things that can be done to improve Wordpress Bundler. Some of these can be :
-
-- Implements an helper `init` command to initialize configuration in composer.json
-- Adds options to `bundle` command to override any setting
-- Adds a `check` command to verify if a pattern is found in included and/or excluded paths
-- Implements some hooks to allow running custom commands, especially to allow the use of others dependencies managers
+There's many things that can be done to improve Wordpress Bundler. For instance, add a `check` command to verify if a pattern is found or not based on bundler configuration.
 
 Feel free to suggest improvements and/or submit PRs !

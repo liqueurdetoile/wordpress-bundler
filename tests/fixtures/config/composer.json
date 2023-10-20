@@ -4,16 +4,18 @@
   "type": "wordpress-plugin",
   "license": "GPL-3.0-or-later",
   "authors": [
-      {
-          "name": "Liqueur de Toile",
-          "email": "contact@liqueurdetoile.com"
-      }
+    {
+      "name": "Liqueur de Toile",
+      "email": "contact@liqueurdetoile.com"
+    }
   ],
   "extra": {
-    "bundler": {
-      "exclude": [
-        "nottobeseen.php"
-      ],
+    "wpbundler": {
+      "finder": {
+        "exclude": [
+          "nottobeseen.php"
+        ]
+      },
       "zip": false
     }
   }

@@ -3,10 +3,20 @@ declare(strict_types=1);
 
 namespace Lqdt\WordpressBundler;
 
+use Adbar\Dot;
+use ComposerLocator;
+use Laminas\Config\Exception\RuntimeException;
+use Laminas\Config\Factory;
+use Laminas\Log\Filter\Priority;
+use Laminas\Log\Formatter\Simple;
+use Laminas\Log\Logger;
+use Laminas\Log\Writer\Stream;
 use PhpZip\Constants\ZipCompressionLevel;
 use PhpZip\Exception\ZipException;
 use PhpZip\ZipFile;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Filesystem\Path;
+use Symfony\Component\Finder\Finder;
 
 /**
  * Core bundler class
@@ -18,44 +28,45 @@ use Symfony\Component\Filesystem\Filesystem;
 class Bundler
 {
     /**
-     * Bundler basic configuration. It will be always loaded as fallback values if no additional configuration is provided
-     * As default, no file are included
+     * Bundler default configuration
      *
      * @var array
      */
     protected $_defaults = [
-      'log' => false,
-      'loglevel' => 5,
-      'debug' => false,
-      'clean' => true,
-      'basepath' => null,
-      'rootpath' => null,
-      'config' => [],
-      'include' => ['*'],
-      'exclude' => [],
-      'composer' => [
-        'install' => true,
-        'dev-dependencies' => false,
-        'phpscoper' => false,
-      ],
-      'output' => 'dist',
-      'zip' => 'bundle',
+        'log' => true,
+        'loglevel' => 5,
+        'basepath' => null,
+        'finder' => [
+            'exclude' => [],
+            'depth' => 0,
+            'ignoreDotFiles' => true,
+            'ignoreVCS' => true,
+            'ignoreVCSIgnored' => true,
+        ],
+        'composer' => [
+            'install' => false,
+            'dev-dependencies' => false,
+            'phpscoper' => false,
+        ],
+        'tmpdir' => null,
+        'output' => 'dist',
+        'clean' => true,
+        'zip' => 'bundle.zip',
     ];
-
-    /**
-     * Caches bundler base path
-     *
-     * @var string
-     * @psalm-suppress PropertyNotSetInConstructor
-     */
-    protected $_basepath;
 
     /**
      * Stores Bundler configuration
      *
-     * @var \Lqdt\WordpressBundler\Config
+     * @var \Adbar\Dot
      */
     protected $_config;
+
+    /**
+     * Finder instance
+     *
+     * @var \Symfony\Component\Finder\Finder|null
+     */
+    protected $_finder = null;
 
     /**
      * Stores filesystem instance
@@ -67,30 +78,31 @@ class Bundler
     /**
      * Stores Logger instance
      *
-     * @var \Laminas\Log\Logger
+     * @var \Laminas\Log\Logger|null
      */
-    protected $_logger;
+    protected $_logger = null;
 
     /**
-     * Stores bundling result code
+     * Caches bundler base path
      *
-     * - 0 : No error
-     * - 1 : Error during export (missing files)
-     * - 2 : Error during composer install
-     * - 3 : Error during dependencies scoping
-     * - 4 : Error during zipping
-     *
-     * @var int
+     * @var string|null
      */
-    protected $_result = 0;
+    protected $_basepath = null;
+
 
     /**
-     * Caches bundler root path
+     * Caches bundler path for temporary files
      *
-     * @var string
-     * @psalm-suppress PropertyNotSetInConstructor
+     * @var string|null
      */
-    protected $_rootpath;
+    protected $_tmpdir = null;
+
+    /**
+     * Stores created temporary folders to ensure cleaning
+     *
+     * @var array<string>
+     */
+    protected $_usedTmpDirs = [];
 
 
     /**
@@ -98,298 +110,388 @@ class Bundler
      *
      * Bundler configuration can be provided as a full Config object or as an array
      *
-     * If no base path to project root is provided, root project directory will be used. Basepath should point to a
+     * If no base path to project root is provided, project directory will be used. Basepath should point to a
      * valid project directory. The path can be either relative to this class or absolute
      *
-     * @param \Lqdt\WordpressBundler\Config|array $config Configuration
+     * @param array $config Configuration
      */
     public function __construct($config = [])
     {
-        if ($config instanceof Config) {
-            $this->_config = $config->setFallbacks($this->_defaults);
-        } else {
-            $this->_config = new Config($config, $this->_defaults);
-        }
-
-        $this->_logger = Logger::get($this->_config->getInt('loglevel'));
+        $this->_config = new Dot($this->_defaults);
+        $this->_config->mergeRecursiveDistinct($config);
+        $this->loadConfigFile('composer.json', 'extra.wpbundler');
         $this->_fs = new FileSystem();
-        $this->_loadConfigFile('composer.json', 'extra.bundler', 'defaults');
-        $this->getConfig()->merge($config);
+    }
+
+    public function getVersion(): string
+    {
+        $composer = $this->_getAbsolutePath('composer.json', dirname(__DIR__));
+        /** @var array{version:string} $data */
+        $data = Factory::fromFile($composer);
+
+        return $data['version'];
     }
 
     /**
-     * Returns the configuration instance of the bundler. Configuration is returned by reference so
-     * any changes made to it will be persisted.
+     * Get bundler normalized absolute base path from where each relative path will be resolved next
      *
-     * @return \Lqdt\WordpressBundler\Config
-     */
-    public function &getConfig(): Config
-    {
-        return $this->_config;
-    }
-
-    public function loadConfig($config, string $registry = 'overrides')
-    {
-        foreach ($config as $path => $key) {
-            if (is_string($path)) {
-                $this->_loadConfigFile($path, $key, $registry);
-            } else {
-                $this->_loadConfigFile($key, null, $registry);
-            }
-        }
-
-        return $this;
-    }
-
-    /**
-     * Returns the root path of the project based on configuration
+     * - If no basepath value is set in config, it will return project directory absolute path (home of `composer.json`)
+     * - If a relative path is set in config, it will return resolved path from project directory
+     * - If an absolute path is provided, it will be returned as is
      *
-     * An additional path can be provided. it will be parsed relatively to bundler root path
-     *
-     * @param string|null $path Path to resolve from bundler root path
      * @return string
      */
-    public function getRootPath(?string $path = null): string
-    {
-        if (empty($this->_rootpath)) {
-            try {
-                $this->setRootPath($this->_config->getString('rootpath'));
-            } catch (\TypeError $err) {
-                $this->setRootPath();
-            }
-        }
-
-        return $path === null ?
-            $this->_rootpath :
-            Resolver::makeAbsolute($path, $this->_rootpath);
-    }
-
-    /**
-     * Sets the root path for the bundler. If provided path is not absolute, it will be resolved
-     * from project root path determined by `composer.json`.
-     *
-     * @param string $path Path to use as root path
-     * @return \Lqdt\WordpressBundler\Bundler
-     */
-    public function setRootPath(?string $path = null)
-    {
-        $this->_rootpath = Resolver::getRootPath($path);
-
-        return $this;
-    }
-
-    /**
-     * Returns bundler base path
-     *
-     * An additional path can be provided. it will be parsed relatively to bundler root path
-     *
-     * @param string|null $path Path to resolve from bundler base path
-     * @return string
-     */
-    public function getBasePath(?string $path = null): string
+    public function getBasePath(): string
     {
         if (empty($this->_basepath)) {
-            try {
-                $this->setBasePath($this->_config->getString('basepath'));
-            } catch (\TypeError $err) {
-                $this->setBasePath();
+            /** @var string|null $basepath */
+            $basepath = $this->getConfig()->get('basepath');
+            $this->_basepath = $this->_getAbsolutePath($basepath, ComposerLocator::getRootPath());
+
+            if (!is_dir($this->_basepath)) {
+                throw new \RuntimeException('[WordpressBundler] Base path is not a valid directory');
             }
         }
 
-        return $path === null ?
-            $this->_basepath :
-            Resolver::makeAbsolute($path, $this->_basepath);
+        return $this->_basepath;
     }
 
     /**
-     * Sets bundler base path. If providing null, base path will be set to project root
+     * The function `getTempDir()` returns the absolute path of the temporary directory used for bundling, using the
+     * configured temporary directory in options or the system's default temporary directory if not specified.
      *
-     * @param string|null $path Base path
-     * @return \Lqdt\WordpressBundler\Bundler
+     * @return string the value of the private property `_tmpdir`, which is a string representing the
+     * temporary directory path.
      */
-    public function setBasePath(?string $path = null)
+    public function getTempDir(): string
     {
-        if ($path === null) {
-            $this->_basepath = $this->getRootPath();
-        } else {
-            $this->_basepath = Resolver::makeAbsolute($path, $this->getRootPath());
+        if (!$this->_tmpdir) {
+            /** @var string $tmpdir */
+            $tmpdir = $this->getConfig()->get('tmpdir') ?? sys_get_temp_dir();
+            $this->_tmpdir = Path::makeAbsolute(uniqid('__wpbundler_tmp_', true), $tmpdir);
         }
+
+        return $this->_tmpdir;
+    }
+
+    /**
+     * The method returns a logger object, creating it if it doesn't already exist.
+     *
+     * Logger is initialized with available configuration when first called.
+     *
+     * Logger is returned by reference, therefore it can be tweaked after its creation.
+     *
+     * @return \Laminas\Log\Logger an instance of the Logger.
+     * @link https://docs.laminas.dev/laminas-log
+     */
+    public function &getLogger(): Logger
+    {
+        if (empty($this->_logger)) {
+            /** @var int $priority */
+            $priority = $this->getConfig()->get('loglevel') ?? 5;
+            $writer = new Stream('php://output');
+            $formatter = new Simple('%message%');
+            $filter = new Priority($priority);
+            $writer->setFormatter($formatter);
+            $writer->addFilter($filter);
+            $logger = new Logger();
+            $logger->addWriter($writer);
+
+            $this->_logger = $logger;
+        }
+
+        return $this->_logger;
+    }
+
+    /**
+     * Returns the configuration of the bundler
+     *
+     * If manually updated, `Bundler::_reloadConfig`
+     *
+     * @return \Adbar\Dot
+     */
+    public function getConfig(): Dot
+    {
+        return new Dot($this->_config);
+    }
+
+    /**
+     * Merge or replace current bundler config
+     *
+     * @param array|\Adbar\Dot $config New configuration
+     * @param bool $merge If true, new config will be merged, otherwise it will replace current one
+     * @return self
+     */
+    public function setConfig($config, bool $merge = true): self
+    {
+        $config = new Dot($config);
+
+        if ($merge) {
+            $this->_config->mergeRecursiveDistinct($config);
+        } else {
+            $this->_config = $config;
+        }
+
+        $this->_reloadConfig();
 
         return $this;
     }
 
     /**
-     * Returns the bundle result
+     * Loads a configuration file into config
      *
-     * @return int
+     * @param string $path Path to file
+     * @param string|null $key Key in file if object given (like JSON for instance)
+     * @return void
      */
-    public function getResult(): int
+    public function loadConfigFile(string $path, ?string $key = null): void
     {
-        return $this->_result;
+        $path = $this->_getAbsolutePath($path);
+        $this->_log(7, sprintf('Loading configuration from %s', $path));
+
+        try {
+            $loaded = new Dot(Factory::fromFile($path));
+
+            if ($key && !is_array($loaded->get($key))) {
+                throw new RuntimeException(sprintf(
+                    'Unable to locate key %s in %s',
+                    $key,
+                    $path
+                ));
+            }
+
+            /** @var array $config */
+            $config = $key ? $loaded->get($key) : $loaded;
+            $this->_config->mergeRecursiveDistinct($config);
+            $this->_reloadConfig();
+
+            $this->_log(7, sprintf('Configuration loaded from %s', $path));
+        } catch (RuntimeException $err) {
+            $this->_log(7, sprintf('Unable to load configuration file : %s', $err->getMessage()));
+        }
     }
 
     /**
-     * Returns the finder with resolved entries based on configuration
+     * The function saves a configuration file at the specified path, with an optional key to specify a
+     * nested place in target.
      *
-     * @return \Lqdt\WordpressBundler\Finder
+     * @param $path The `path` parameter is a string that represents the file path where the
+     * configuration file will be saved.
+     * @param $key The `key` parameter is an optional parameter that represents the key under which the
+     * configuration data will be saved in the config file. If the `key` parameter is provided, the
+     * configuration data will be saved under that key in the config file. If the `key` parameter is
+     * not provided or is
+     * @return bool a boolean value. It returns true if the configuration file is successfully saved,
+     * and false if there is an error or exception during the process.
+     */
+    public function saveConfigFile(string $path, ?string $key = null): bool
+    {
+        $path = $this->_getAbsolutePath($path);
+
+        try {
+            if ($key) {
+                try {
+                    $config = new Dot(Factory::fromFile($path));
+                } catch (RuntimeException $err) {
+                    $config = new Dot();
+                }
+
+                $config->set($key, $this->getConfig());
+            } else {
+                $config = $this->getConfig();
+            }
+
+            Factory::toFile($path, $config->all());
+
+            return true;
+        } catch (RuntimeException $err) {
+            $this->_log(3, $err->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * The function `getFinder()` returns a Finder object that is configured based on the include and
+     * exclude patterns specified in the configuration.
+     *
+     * @return \Symfony\Component\Finder\Finder an instance of the Finder class.
      */
     public function getFinder(): Finder
     {
-        $this->_log(6, sprintf('Paths resolving starting'));
+        if (empty($this->_finder)) {
+            $config = $this->getConfig();
+            /** @var array<int|string>|int|string $depth */
+            $depth = $config->get('finder.depth', 0);
+            /** @var array<int,string> $exclude */
+            $exclude = $config->get('finder.exclude') ?? [];
+            /** @var array<int,string> $excludedPatterns */
+            $excludedPatterns = array_merge($exclude, $this->_readFileAsArray('.wpignore'));
+            $finder = new Finder();
 
-        $finder = new Finder($this->getBasePath());
+            $finder
+                ->ignoreDotFiles((bool)$config->get('finder.ignoreDotFiles', true))
+                ->ignoreVCS((bool)$config->get('finder.ignoreVCS', true))
+                ->ignoreVCSIgnored((bool)$config->get('finder.ignoreVCSIgnored', true))
+                ->notPath($excludedPatterns)
+                ->notName($excludedPatterns)
+                ->in($this->getBasePath());
 
-        try {
-            $finder->includeFromFile($this->getRootPath('.wpinclude'));
-        } catch (\RuntimeException $err) {
-            $this->_log(7, 'No .wpinclude file found at root path');
-        }
-
-        try {
-            $finder->includeMany($this->_config->getArray('include'));
-        } catch (\TypeError $err) {
-            $this->_log(7, 'No include directives found in config files');
-        }
-
-        try {
-            $finder->excludeFromFile($this->getRootPath('.wpexclude'));
-        } catch (\RuntimeException $err) {
-            $this->_log(7, 'No .wpexclude file found at root path');
-        }
-
-        try {
-            $finder->excludeMany($this->_config->getArray('exclude'));
-        } catch (\TypeError $err) {
-            $this->_log(7, 'No exclude directives found in config files');
-        }
-
-        $this->_log(5, sprintf('Paths resolving done : %d entries found', count($finder->getEntries())));
-
-        return $finder;
-    }
-
-    /**
-     * Creates a new bundle
-     *
-     * @param array $overrides Configuration overrides provided at runtime
-     * @return string Path to bundle folder
-     */
-    public function bundle(array $overrides = []): string
-    {
-        $this->getConfig()->merge($overrides, 'overrides');
-
-        $this->_log(-1, 'WordpressBundler - Bundling starting');
-        $this->_log(-1, '------------------------------------');
-
-        $scoped = (bool)$this->_config->get('composer.phpscoper');
-        $zipped = (bool)$this->_config->get('zip');
-        $useTmpFolder = $scoped || $zipped;
-
-        // Handles directories
-        $output = $this->_handleDirectory(
-            $this->_config->getString('output'),
-            $this->_config->getBoolean('clean')
-        );
-        $otmp = $this->_handleDirectory(
-            Resolver::makeAbsolute(uniqid('__wpbundler_tmp_'), sys_get_temp_dir()),
-            true
-        );
-        $oscoped = $this->_handleDirectory(
-            Resolver::makeAbsolute(uniqid('__wpbundler_scoped_'), sys_get_temp_dir()),
-            true
-        );
-
-        // Export files and structures
-        $target = $this->export($useTmpFolder ? $otmp : $output);
-
-        // Apply php-scoper
-        if ($scoped) {
-            $target = $this->scope($target, $zipped ? $oscoped : $output);
-        }
-
-        // Zip
-        if ($zipped) {
-            $target = $this->zip($target, Resolver::normalize("{$output}/{$this->_config->getString('zip')}.zip"));
-        }
-
-        // Clear temporary folders
-        $this->_fs->remove($otmp);
-        $this->_fs->remove($oscoped);
-
-        return $target;
-    }
-
-    /**
-     * Copy entries to a target folder and install the dependencies accordingly to configuration
-     *
-     * @param  string $to Target path
-     * @return string target path
-     */
-    public function export(string $to): string
-    {
-        $this->_log(6, sprintf('Copy files'));
-        $this->_log(7, sprintf('Target directory is %s', $to));
-
-        $useComposer = $this->_config->getBoolean('composer.install');
-        $finder = $this->getFinder();
-        // Ensures that destination folder won't be in included entries
-        $finder->exclude($this->getConfig()->getString('output'));
-        $entries = $finder->getEntries();
-        $toRemove = $finder->getEntriesToRemove($to);
-        $copied = 0;
-
-        foreach ($entries as $rpath => $fpath) {
-            $tpath = Resolver::makeAbsolute($rpath, $to);
-
-            if (is_dir($fpath)) {
-                $this->_fs->mirror($fpath, $tpath);
-                $copied++;
-                $this->_log(7, sprintf(' - %s', $rpath));
-            } elseif (is_file($fpath)) {
-                $this->_fs->copy($fpath, $tpath);
-                $copied++;
-                $this->_log(7, sprintf(' - %s', $rpath));
-            } else {
-                $this->_result = 1;
-                $this->_log(4, sprintf('Unable to locate file : %s', $fpath));
+            if ($depth !== -1) {
+                $finder->depth($depth);
             }
+
+            $this->_finder = $finder;
         }
 
-        // Clean excluded childs
-        $this->_fs->remove($toRemove);
-        $this->_log(5, sprintf('%s files and folders copied', $copied));
+        return $this->_finder;
+    }
 
-        if (!$useComposer) {
-            $this->_log(6, sprintf('Skipping composer install as requested by configuration'));
+    /**
+     * The function sets the Finder object for the current instance.
+     *
+     * @param \Symfony\Component\Finder\Finder $finder Finder instance to replace current one
+     */
+    public function setFinder(Finder $finder): self
+    {
+        $this->_finder = $finder;
 
-            return $to;
+        return $this;
+    }
+
+    /**
+     * The logHeader function logs the version of WordpressBundler and a separator line.
+     */
+    public function logHeader(): void
+    {
+        $version = $this->getVersion();
+        $this->_log(5, PHP_EOL . 'WordpressBundler - v' . $version);
+        $this->_log(5, '-------------------------');
+    }
+
+    /**
+     * Returns an array of paths to copy based on configuration
+     *
+     * @return array<string,string>
+     */
+    public function getEntries(): array
+    {
+        $finder = $this->getFinder();
+        /** @var array<int|string>|int|string $depth */
+        $depth = $this->getConfig()->get('finder.depth') ?? 0;
+        $iterator = $depth === -1 ? $finder->files()->getIterator() : $finder->getIterator();
+        $entries = [];
+
+        foreach ($iterator as $file) {
+            $path = $file->getRealPath();
+
+            if ($path === false) {
+                continue;
+            }
+
+            $relative = $this->_getRelativePath($path);
+            $parent = Path::getDirectory($relative);
+
+            // Remove parent directory if present in list
+            if (array_key_exists($parent, $entries)) {
+                unset($entries[$parent]);
+            }
+
+            $entries[$relative] = Path::normalize($path);
         }
 
-        $composer = Resolver::makeAbsolute('composer.json', $to);
+        return $entries;
+    }
+
+    /**
+     * The function copies an array of entries to a specified destination, keeping track of the number
+     * of directories, files, successes, failures, and processed entries.
+     *
+     * @param array<string,string> $entries An array containing the entries to be copied. Each entry consists of a
+     * relative path as the key and the absolute path as the value. The entries can be either
+     * directories or files.
+     * @param string $to The "to" parameter is a string that represents the destination directory where
+     * the entries will be copied to. IF relative, it will be resolved from bundler base path
+     * @return array an array with the following keys and values:
+     */
+    public function copy(array $entries, string $to): array
+    {
+        $to = $this->_getAbsolutePath($to);
+        $results = [
+            'to' => $to,
+            'dirs' => 0,
+            'files' => 0,
+            'failures' => 0,
+            'success' => 0,
+            'processed' => 0,
+            'failed' => [],
+        ];
+
+        foreach ($entries as $relative => $absolute) {
+            $target = $this->_getAbsolutePath($relative, $to);
+
+            // Adds a security level to avoid processing output content if case of misconfiguration
+            if (Path::isBasePath($to, $absolute)) {
+                $results['failures']++;
+                $results['processed']++;
+                $results['failed'][$relative] = $absolute;
+                continue;
+            }
+
+            if (is_dir($absolute)) {
+                $this->_fs->mirror($absolute, $target);
+                $results['dirs']++;
+                $results['success']++;
+                $results['processed']++;
+                continue;
+            }
+
+            if (is_file($absolute)) {
+                $this->_fs->copy($absolute, $target);
+                $results['files']++;
+                $results['success']++;
+                $results['processed']++;
+                continue;
+            }
+
+            $results['failures']++;
+            $results['processed']++;
+            $results['failed'][$relative] = $absolute;
+        }
+
+        return $results;
+    }
+
+    /**
+     * The function installs composer dependencies in a specified working directory.
+     *
+     * @param string $workingdir The `workingdir` parameter is a string that represents the directory
+     * where the composer.json file is located and where the composer install command will be executed.
+     */
+    public function install(string $workingdir): void
+    {
+        $composer = $this->_getAbsolutePath('composer.json', $workingdir);
 
         if (!is_file($composer)) {
-            $this->_log(4, sprintf('Composer install is requested but no composer.json have been found in %s', $to));
-
-            return $to;
+            $this->_log(2, sprintf(
+                'Composer install is requested but no composer.json have been found in %s',
+                $workingdir
+            ));
         }
-
-        $this->_log(6, sprintf('Launching composer install'));
 
         // Run composer install in target folder
         // Use of install ensures that composer.lock will be used to deploy dependencies used versions
-        $cmd = "composer install --no-progress --working-dir={$to} --classmap-authoritative";
-        $cmd .= $this->getConfig()->getBoolean('composer.dev-dependencies') ? ' --dev' : ' --no-dev';
-        $cmd .= $this->getConfig()->getBoolean('debug') ? '' : ' --quiet';
+        /** @var bool $dev */
+        $dev = (bool)$this->getConfig()->get('composer.dev-dependencies');
+        $log = (bool)$this->getConfig()->get('log');
+        $cmd = "composer install --no-progress --working-dir={$workingdir} --classmap-authoritative";
+        $cmd .= $dev ? ' --dev' : ' --no-dev';
+        $cmd .= $log ? '' : ' --quiet';
 
         $result = $this->_exec($cmd);
-        if ($result > 0) {
-            $this->_result = 2;
-            $this->_log(3, sprintf('Unable to execute composer install'));
-        } else {
-            $this->_log(5, sprintf('Composer dependencies installation done'));
-        }
 
-        return $to;
+        if ($result > 0) {
+            $this->_log(2, sprintf('Unable to execute composer install at %s working dir', $workingdir));
+        }
     }
 
     /**
@@ -397,48 +499,52 @@ class Bundler
      *
      * @param  string $from From path
      * @param  string $to   To path
-     * @return string To path
      */
-    public function scope(string $from, string $to): string
+    public function scope(string $from, string $to): void
     {
-        $this->_log(6, 'Start dependencies scoping');
+        $log = (bool)$this->getConfig()->get('log');
 
-        $scoper = is_file('php-scoper') ? 'php-scoper' : Resolver::makeAbsolute('vendor/bin/php-scoper');
-        $config = $this->getRootPath('scoper.inc.php');
+        // Find out binary from main project package
+        $scoper = is_file('php-scoper') ?
+            'php-scoper' :
+            Path::makeAbsolute('vendor/bin/php-scoper', ComposerLocator::getRootPath());
 
+        // Handle error
         if (!is_file($scoper)) {
             $this->_log(
                 2,
-                '[WordpressBundler] Dependencies obfuscation is required but unable to locate PHP-Scoper script'
+                'Unable to locate PHP-scoper to perform dependencies obfuscation'
             );
 
-            return $from;
+            return;
         }
 
+        // Search for configuration in bundler base path then build and execute command
+        $config = $this->_getAbsolutePath('scoper.inc.php');
+        $hasConfig = is_file($config);
+        $this->_log(6, $hasConfig ?
+            sprintf('Loading %s configuration file for PHP-Scoper configuration', $config) :
+            'No configuration file found. Reverting to default config');
         $cmd = "{$scoper} add-prefix {$from} -o {$to} -f -q" . (is_file($config) ? " -c {$config}" : " --no-config");
         $result = $this->_exec($cmd);
 
         if ($result > 0) {
-            $this->_result = 3;
-            $this->_log(3, 'Unable to apply dependency scoping. Php-scoper reports a failure');
+            $this->_log(2, 'Unable to apply dependency scoping. Php-scoper reports a failure');
 
-            return $from;
+            return;
         }
 
         $cmd = "composer dump-autoload --working-dir={$to} --classmap-authoritative";
-        $cmd .= $this->getConfig()->getBoolean('debug') ? '' : ' --quiet';
+        $cmd .= $log ? '' : ' --quiet';
         $result = $this->_exec($cmd);
 
         if ($result > 0) {
-            $this->_result = 3;
-            $this->_log(3, 'Unable to dump composer autoload after scoping');
+            $this->_log(4, 'Unable to dump composer autoload after scoping');
 
-            return $from;
+            return;
         }
 
-        $this->_log(5, sprintf('Dependencies scoped and autoload dumped'));
-
-        return $to;
+        // $this->_log(5, sprintf('Dependencies scoped and autoload dumped'));
     }
 
     /**
@@ -446,11 +552,13 @@ class Bundler
      *
      * @param  string $from From path (must be a folder)
      * @param  string $to   To path (must be a valid path/archive.zip)
-     * @return string Target path
      */
-    public function zip(string $from, string $to): string
+    public function zip(string $from, string $to): void
     {
-        $this->_log(6, sprintf('Zipping files started'));
+        if (is_file($to)) {
+            unlink($to);
+        }
+
         try {
             $zip = new ZipFile();
             $zip
@@ -458,14 +566,120 @@ class Bundler
                 ->setCompressionLevel(ZipCompressionLevel::MAXIMUM)
                 ->saveAsFile($to)
                 ->close();
-
-            $this->_log(5, sprintf('Zip bundle created'));
         } catch (ZipException $err) {
-            $this->_result = 4;
             $this->_log(3, $err->getMessage());
         }
+    }
 
-        return $to;
+    /**
+     * Creates a new bundle
+     *
+     * @return string Path to bundle folder
+     */
+    public function bundle(): string
+    {
+        $start = microtime(true);
+
+        $this->logHeader();
+        $config = $this->getConfig();
+        $installed = (bool)$config->get('composer.install');
+        $scoped = $installed && (bool)$config->get('composer.phpscoper');
+        $zipped = (bool)$config->get('zip');
+        /** @var string $output */
+        $output = $config->get('output') ?? 'dist';
+        $output = $this->_getAbsolutePath($output);
+        $this->_handleDirectory($output);
+
+        // Finding entries
+        $this->_log(5, '- Extracting entries to be bundled');
+        $entries = $this->getEntries();
+        $this->_log(6, sprintf('  %d entries found', count($entries)));
+
+        // Copying entries
+        $to = $installed || $zipped ? $this->getTempDir() : $output;
+        $this->_log(5, '- Preparing data');
+        $this->_log(7, sprintf('  Copying entries to %s', $to));
+        if ($to !== $output) {
+            $this->_handleDirectory($to, true);
+            $this->_usedTmpDirs[] = $to;
+        }
+
+        /** @var array{processed:int,dirs:int,files:int,failures:int,failed:array<string>} $results */
+        $results = $this->copy($entries, $to);
+        $this->_log(6, sprintf('  %d entries processed', $results['processed']));
+        $this->_log(7, sprintf('  %d directories processed', $results['dirs']));
+        $this->_log(7, sprintf('  %d files processed', $results['files']));
+        if ($results['failures']) {
+            $this->_log(4, sprintf('  Failed to copy %d entries', $results['failures']));
+            foreach ($results['failed'] as $failure) {
+                $this->_log(6, sprintf('  Entry failed : %s', $failure));
+            }
+        }
+
+        // Composer install
+        if ($installed) {
+            $this->_log(5, '- Running composer install');
+            $this->install($to);
+            $this->_log(6, '  Install successful');
+        }
+
+        // Php-Scoper
+        if ($scoped) {
+            $this->_log(5, '- Obfuscating dependencies namespace');
+            $from = $to;
+            $to = $zipped ? $this->getTempDir() : $output;
+            if ($to !== $output) {
+                $this->_handleDirectory($to, true);
+                $this->_usedTmpDirs[] = $to;
+            }
+            $this->scope($from, $to);
+            $this->_log(6, '  Dependencies namespaces obfuscated');
+        }
+
+        // Zip
+        if ($zipped) {
+            $this->_log(5, '- Zipping bundle');
+            $from = $to;
+            /** @var string $zipname */
+            $zipname = $config->get('zip');
+            $zipname = Path::changeExtension($zipname, 'zip');
+            $output = $this->_getAbsolutePath($zipname, $output);
+            $this->zip($from, $output);
+            $this->_log(6, '  Zip file created');
+        }
+
+        $this->_log(5, '- Cleaning temporary data');
+        $removed = $this->_clearTmpDirs();
+        $this->_log(6, '  Temporary data cleaned');
+        $this->_log(7, $removed ?
+            sprintf('  %d temporary folder(s) removed', $removed) :
+            '  No temporary folders to removed');
+
+        $end = microtime(true);
+
+        $this->_log(5, sprintf('- Done. Your bundle is available at %s', $output));
+        $this->_log(6, sprintf('  Bundle took %fs', $end - $start));
+
+        return $output;
+    }
+
+    /**
+     * The function clears temporary directories that have been used.
+     *
+     * @return int Number of removed directories
+     */
+    protected function _clearTmpDirs(): int
+    {
+        $removed = 0;
+
+        foreach ($this->_usedTmpDirs as $dir) {
+            if (is_dir($dir)) {
+                $removed++;
+                $this->_fs->remove($dir);
+            }
+        }
+
+        return $removed;
     }
 
     /**
@@ -478,10 +692,10 @@ class Bundler
      */
     protected function _exec(string $cmd): int
     {
-        $debug = $this->getConfig()->getBoolean('debug');
         exec($cmd, $output, $result);
 
-        if ($result > 0 && $debug && is_array($output)) {
+        if ($result > 0) {
+            /** @var string $line */
             foreach ($output as $line) {
                 $this->_log(7, $line);
             }
@@ -491,15 +705,21 @@ class Bundler
     }
 
     /**
-     * Handles creation and/or cleaning of a directory
+     * The function handles a directory by creating it if it doesn't exist, and optionally cleaning it
+     * if it does.
      *
-     * @param  string  $dir   Directory path
-     * @param  bool $clean Clean flag
-     * @return string  Aboslute path to directory
+     * @param string $dir The `dir` parameter is a string that represents the directory path. It is the
+     * directory that needs to be handled or created if it doesn't exist.
+     * @param bool $clean A boolean flag indicating whether to clean the directory before handling it.
+     * If set to true, the directory will be removed and recreated. If set to false, the bundler config
+     * will be used to decide if directory should be cleaned or not.
+     * @return string the directory path as a string.
      */
-    protected function _handleDirectory(string $dir, bool $clean): string
+    protected function _handleDirectory(string $dir, bool $clean = false): string
     {
-        $dir = Resolver::makeAbsolute($dir, $this->getBasePath());
+        /** @var bool $clean */
+        $clean = $clean || ($this->getConfig()->get('clean') ?? true);
+        $dir = $this->_getAbsolutePath($dir);
 
         if (!is_dir($dir)) {
             $this->_fs->mkdir($dir);
@@ -509,42 +729,6 @@ class Bundler
         }
 
         return $dir;
-    }
-
-    protected function _loadComposerConfig(): void
-    {
-        $config = $this->getConfig();
-        $this->_log(6, 'Loading configuration from composer.json');
-
-        try {
-            $composer = $this->$this->getRootPath('composer.json');
-            $config->load($composer, 'extra.bundler');
-            $this->_log(5, 'Configuration loaded from composer.json');
-        } catch (\RuntimeException $err) {
-            $this->_log(4, $err->getMessage());
-        }
-    }
-
-    /**
-     * Loads a configuration file into config
-     *
-     * @param string $path Path to file
-     * @param string|null $key Key in file
-     * @param string $registry Targetted config registry
-     * @return void
-     */
-    protected function _loadConfigFile(string $path, ?string $key, string $registry): void
-    {
-        $this->_log(6, sprintf('Loading configuration from %s', $path));
-        $config = $this->getConfig();
-        $path = $this->getRootPath($path);
-
-        try {
-            $config->load($path, $key, $registry);
-            $this->_log(5, sprintf('Configuration loaded from %s', $path));
-        } catch (\RuntimeException $err) {
-            $this->_log(4, $err->getMessage());
-        }
     }
 
     /**
@@ -557,11 +741,10 @@ class Bundler
      */
     protected function _log(int $priority, string $message)
     {
-        $logEnabled = $this->_config->getBoolean('log');
+        $logger = $this->getLogger();
+        $logEnabled = (bool)$this->getConfig()->get('log');
+
         switch ($priority) {
-            case -1:
-                $priority = 5;
-                break;
             case 0:
                 $message = "\033[1;31m{$message}\033[37m";
                 break;
@@ -581,7 +764,7 @@ class Bundler
                 $message = "\033[1;32m{$message}\033[37m";
                 break;
             case 6:
-                $message = "\033[0;32m{$message}\033[37m";
+                $message = "\033[0;26m{$message}\033[37m";
                 break;
             case 7:
                 $message = "\033[1;34m{$message}\033[37m";
@@ -589,13 +772,99 @@ class Bundler
         }
 
         if ($logEnabled) {
-            $this->_logger->log($priority, $message);
-            // ob_flush();
+            $logger->log($priority, $message);
         }
 
-        if ($priority <= 3 && $this->_config->getBoolean('debug')) {
-            throw new \RuntimeException("[WordpressBundler] Aborting bundling");
+        if ($priority <= 3) {
+            $logger->log(2, "Closing bundler due to error(s)");
+
+            if (!$logEnabled) {
+                $logger->log(2, "You can try to enable log at level 7 for debugging");
+            }
+
+            $this->_clearTmpDirs();
+
+            throw new \RuntimeException("Closing bundler due to error(s)");
         }
+
+        return $this;
+    }
+
+    /**
+     * The function returns the absolute path of a given path, making it absolute if it is relative to
+     * base path.
+     *
+     * @param $path File or directory path
+     * @param $basepath The `base path` to use. If not provided, bundler base path will be used
+     * @return string the absolute path of the given path.
+     */
+    protected function _getAbsolutePath(?string $path, ?string $basepath = null): string
+    {
+        $basepath = $basepath ?: $this->getBasePath();
+        $path = $path ?: $basepath;
+
+        if (Path::isRelative($path)) {
+            $path = Path::makeAbsolute($path, $basepath);
+        }
+
+        return Path::canonicalize($path);
+    }
+
+    /**
+     * The function returns the relative path of a given path from the given basepath.
+     * If no base path is provided, bundler base path will be used.
+     * If path is already relative, it will be returned unchanged.
+     *
+     * @param $path File or directory path
+     * @param $basepath The `base path` to use. If not provided, bundler base path will be used
+     * @return string the absolute path of the given path.
+     */
+    protected function _getRelativePath(string $path, ?string $basepath = null): string
+    {
+        $basepath = $basepath ?: $this->getBasePath();
+
+        if (Path::isRelative($path)) {
+            return $path;
+        }
+
+        return Path::canonicalize(Path::makeRelative($path, $basepath));
+    }
+
+    /**
+     * The function reads a file and returns its contents as an array, excluding empty lines and lines
+     * starting with '#' character.
+     *
+     * @param string $filepath The `filepath` parameter is a string that represents the path to the file
+     * that needs to be read. If relative, it will be resolved from bundler basepath
+     * @return array an array.
+     */
+    protected function _readFileAsArray(string $filepath): array
+    {
+        $filepath = $this->_getAbsolutePath($filepath);
+        /** phpcs:disable */
+        $lines = @file($filepath, FILE_SKIP_EMPTY_LINES);
+        /** phpcs:enable */
+
+        if ($lines === false) {
+            return [];
+        }
+
+        return array_filter($lines, function ($line) {
+            return $line[0] !== '#';
+        });
+    }
+
+    /**
+     * The function _reloadConfig() resets cached data based on config in order to take any change into account.
+     *
+     * @return self
+     */
+    protected function _reloadConfig(): self
+    {
+        $this->_logger = null;
+        $this->_finder = null;
+        $this->_basepath = null;
+        $this->_tmpdir = null;
 
         return $this;
     }

@@ -62,38 +62,38 @@
     <!-- Slevomat sniffs-->
     <rule ref="SlevomatCodingStandard.Arrays.TrailingArrayComma"/>
     <rule ref="SlevomatCodingStandard.Classes.ClassConstantVisibility">
-    <properties>
-        <property name="fixable" type="boolean" value="true"/>
-    </properties>
+        <properties>
+            <property name="fixable" type="boolean" value="true"/>
+        </properties>
     </rule>
     <rule ref="SlevomatCodingStandard.Classes.EmptyLinesAroundClassBraces">
-    <properties>
-        <property name="linesCountAfterOpeningBrace" value="0"/>
-        <property name="linesCountBeforeClosingBrace" value="0"/>
-    </properties>
+        <properties>
+            <property name="linesCountAfterOpeningBrace" value="0"/>
+            <property name="linesCountBeforeClosingBrace" value="0"/>
+        </properties>
     </rule>
     <rule ref="SlevomatCodingStandard.Classes.ModernClassNameReference">
-    <properties>
-        <property name="enableOnObjects" value="false"/>
-    </properties>
+        <properties>
+            <property name="enableOnObjects" value="false"/>
+        </properties>
     </rule>
     <rule ref="SlevomatCodingStandard.Commenting.DisallowOneLinePropertyDocComment"/>
     <rule ref="SlevomatCodingStandard.Commenting.DocCommentSpacing">
-    <properties>
-        <property name="linesCountBeforeFirstContent" value="0" />
-        <property name="linesCountBetweenDescriptionAndAnnotations" value="1" />
-        <property name="linesCountBetweenDifferentAnnotationsTypes" value="0" />
-        <property name="linesCountBetweenAnnotationsGroups" value="0" />
-        <property name="linesCountAfterLastContent" value="0" />
-    </properties>
+        <properties>
+            <property name="linesCountBeforeFirstContent" value="0" />
+            <property name="linesCountBetweenDescriptionAndAnnotations" value="1" />
+            <property name="linesCountBetweenDifferentAnnotationsTypes" value="0" />
+            <property name="linesCountBetweenAnnotationsGroups" value="0" />
+            <property name="linesCountAfterLastContent" value="0" />
+        </properties>
     </rule>
     <rule ref="SlevomatCodingStandard.Commenting.EmptyComment"/>
     <rule ref="SlevomatCodingStandard.Commenting.InlineDocCommentDeclaration">
-    <properties>
-        <property name="allowDocCommentAboveReturn" type="boolean" value="true" />
-    </properties>
-    <exclude name="SlevomatCodingStandard.Commenting.InlineDocCommentDeclaration.NoAssignment"/>
-    <exclude name="SlevomatCodingStandard.Commenting.InlineDocCommentDeclaration.MissingVariable"/>
+        <properties>
+            <property name="allowDocCommentAboveReturn" type="boolean" value="true" />
+        </properties>
+        <exclude name="SlevomatCodingStandard.Commenting.InlineDocCommentDeclaration.NoAssignment"/>
+        <exclude name="SlevomatCodingStandard.Commenting.InlineDocCommentDeclaration.MissingVariable"/>
     </rule>
     <rule ref="SlevomatCodingStandard.ControlStructures.AssignmentInCondition"/>
     <rule ref="SlevomatCodingStandard.ControlStructures.DisallowContinueWithoutIntegerOperandInSwitch"/>
@@ -104,14 +104,14 @@
     <rule ref="SlevomatCodingStandard.Exceptions.DeadCatch"/>
     <rule ref="SlevomatCodingStandard.Namespaces.AlphabeticallySortedUses"/>
     <rule ref="SlevomatCodingStandard.Namespaces.FullyQualifiedClassNameInAnnotation">
-    <exclude-pattern>*/tests/*</exclude-pattern>
+        <exclude-pattern>*/tests/*</exclude-pattern>
     </rule>
     <rule ref="SlevomatCodingStandard.Namespaces.NamespaceDeclaration"/>
     <rule ref="SlevomatCodingStandard.Namespaces.UnusedUses"/>
     <rule ref="SlevomatCodingStandard.Namespaces.UseDoesNotStartWithBackslash"/>
     <rule ref="SlevomatCodingStandard.Namespaces.UseFromSameNamespace"/>
     <rule ref="SlevomatCodingStandard.Namespaces.UseSpacing">
-    <exclude-pattern>*/templates/*</exclude-pattern>
+        <exclude-pattern>*/templates/*</exclude-pattern>
     </rule>
     <rule ref="SlevomatCodingStandard.PHP.ShortList"/>
     <rule ref="SlevomatCodingStandard.PHP.TypeCast"/>
@@ -121,9 +121,7 @@
     <properties>
         <property name="linesCountBeforeDeclare" value="0"/>
         <property name="linesCountAfterDeclare" value="1"/>
-        <property name="spacesCountAroundEqualsSign" value="0"/>
-        <property name="newlinesCountAfterDeclare" value="2"/>
-        <property name="newlinesCountBetweenOpenTagAndDeclare" value="1"/>
+        <property name="spacesCountAroundEqualsSign" value="0"/>        
     </properties>
     <exclude-pattern>*/config/*</exclude-pattern>
     <exclude-pattern>*/templates/*</exclude-pattern>

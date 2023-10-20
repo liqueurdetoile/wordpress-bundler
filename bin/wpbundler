@@ -1,7 +1,7 @@
 #!/usr/bin/env php
 <?php
 /**
- * Wordpress Bundler - PHP package to prepare production bundles for Wordpress plugins and templates
+ * Wordpress Bundler - PHP package to prepare production bundles for Wordpress plugins and themes
  *
  * @author Liqueur de Toile <contact@liqueurdetoile.com>
  * @copyright 2022-present Liqueur de Toile
@@ -10,9 +10,10 @@
 declare(strict_types=1);
 
 use Lqdt\WordpressBundler\Command\BundleCommand;
+use Lqdt\WordpressBundler\Command\CreateConfigCommand;
 use Symfony\Component\Console\Application;
 
-// include autoloader
+// Loading composer autoloader
 if (is_file('vendor/autoload.php')) {
     include_once 'vendor/autoload.php';
 } else {
@@ -21,4 +22,5 @@ if (is_file('vendor/autoload.php')) {
 
 $application = new Application();
 $application->add(new BundleCommand());
+$application->add(new CreateConfigCommand());
 $application->run();
