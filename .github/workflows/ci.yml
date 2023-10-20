@@ -1,14 +1,10 @@
 name: CI
 
 on:
-  workflow_dispatch: {}
-  push:
-    branches:
-      - "1.x-next"
-      - "master"
   pull_request:
     branches:
-      - "*"
+      - "master"
+      - "1.x-next"
   schedule:
     - cron: "0 0 1 * *"
 

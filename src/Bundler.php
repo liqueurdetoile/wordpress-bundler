@@ -487,6 +487,7 @@ class Bundler
         $cmd .= $dev ? ' --dev' : ' --no-dev';
         $cmd .= $log ? '' : ' --quiet';
 
+        $this->_log(7, sprintf('  Running %s', $cmd));
         $result = $this->_exec($cmd);
 
         if ($result > 0) {
@@ -522,10 +523,11 @@ class Bundler
         // Search for configuration in bundler base path then build and execute command
         $config = $this->_getAbsolutePath('scoper.inc.php');
         $hasConfig = is_file($config);
-        $this->_log(6, $hasConfig ?
-            sprintf('Loading %s configuration file for PHP-Scoper configuration', $config) :
+        $this->_log(7, $hasConfig ?
+            sprintf('  Loading %s configuration file for PHP-Scoper configuration', $config) :
             'No configuration file found. Reverting to default config');
         $cmd = "{$scoper} add-prefix -o {$to} -q -f " . (is_file($config) ? "-c {$config} " : "--no-config ") . $from;
+        $this->_log(7, sprintf('  Running %s', $cmd));
         $result = $this->_exec($cmd);
 
         if ($result > 0) {
